@@ -11,6 +11,10 @@
     <string name="receiver_notification_title">TV receiver active</string>
     <string name="receiver_notification_text">Receiving as %1$s</string>
     <string name="receiver_notification_stop">Stop</string>
+    <string name="download_notification_channel">Downloads</string>
+    <string name="download_notification_title">Downloading</string>
+    <string name="download_notification_waiting">Waiting while you watch</string>
+    <string name="download_notification_more">+%1$d more</string>
     <string name="xt_video_mute_description">Mute</string>
     <string name="xt_video_unmute_description">Unmute</string>
     <string name="xt_video_volume_description">Volume</string>

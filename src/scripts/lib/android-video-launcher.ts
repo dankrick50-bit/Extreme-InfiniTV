@@ -18,6 +18,7 @@ import type { ChannelInput } from "@/scripts/lib/channel-lite.js"
 import { serializeChannelsJson } from "@/scripts/lib/channel-lite.js"
 import { setProgress, markCompleted } from "@/scripts/lib/preferences.js"
 import { getTvOverscan, TV_OVERSCAN_EVENT } from "@/scripts/lib/app-settings.js"
+import { noteNativePlayerOpen } from "@/scripts/lib/download-native.js"
 import { log, redactUrl } from "@/scripts/lib/log.js"
 
 export type AndroidNativeEventType =
@@ -96,7 +97,7 @@ export function launchAndroidNativeVod(opts: VodLaunchOptions): boolean {
   const bridge = window.AndroidVideo
   if (!bridge?.launchVod) return false
   try {
-    return bridge.launchVod(
+    const launched = bridge.launchVod(
       opts.contentKey,
       opts.url,
       opts.ua || "",
@@ -105,6 +106,9 @@ export function launchAndroidNativeVod(opts: VodLaunchOptions): boolean {
       opts.posterUrl || "",
       Math.max(0, Math.floor(opts.startMs || 0)),
     )
+    // A saved file plays from a content:// address and needs no provider connection.
+    if (launched && /^https?:/i.test(opts.url)) holdDownloadsForNativePlayer()
+    return launched
   } catch (err) {
     log.error("[xt:android-video] native VOD launch failed:", redactUrl(opts.url), err)
     return false
@@ -125,13 +129,15 @@ export function launchAndroidNativeLive(opts: LiveLaunchOptions): boolean {
       defaultUa: opts.defaultUa,
       programmes: opts.programmes ?? null,
     })
-    return bridge.launchLive(
+    const launched = bridge.launchLive(
       opts.contentKey,
       json,
       opts.initialChannelId,
       opts.defaultUa || "",
       opts.defaultReferer || "",
     )
+    if (launched) holdDownloadsForNativePlayer()
+    return launched
   } catch (err) {
     log.error("[xt:android-video] native live launch failed:", err)
     return false
@@ -146,6 +152,20 @@ type Subscriber = (event: AndroidNativeEvent) => void
 
 const subscribers = new Set<Subscriber>()
 let listenersInstalled = false
+let releaseDownloadHold: (() => void) | null = null
+
+// The native player holds the account's connection while the page is suspended behind it, so
+// downloads wait until it reports that it closed.
+function holdDownloadsForNativePlayer(): void {
+  noteNativePlayerOpen(true)
+  if (releaseDownloadHold) return
+  releaseDownloadHold = subscribeAndroidNativeEvents((event) => {
+    if (event.type !== "xt:android-native-finished" && event.type !== "xt:android-native-error") return
+    releaseDownloadHold?.()
+    releaseDownloadHold = null
+    noteNativePlayerOpen(false)
+  })
+}
 
 function dispatchToSubscribers(type: AndroidNativeEventType, payload: unknown): void {
   const event: AndroidNativeEvent = {

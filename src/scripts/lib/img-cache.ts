@@ -10,6 +10,7 @@ import {
   type ImgKind,
 } from "@/scripts/lib/img-scale"
 import { createTimedIdbOpener } from "@/scripts/lib/idb-open.ts"
+import { isLowMemoryDevice, onMemoryPressure } from "@/scripts/lib/memory-pressure.js"
 
 const DB_NAME = "xt_img_cache"
 const DB_VERSION = 1
@@ -136,7 +137,22 @@ const failedUrls = new Set<string>()
 const inFlight = new Map<string, Promise<void>>()
 
 // Bounds live blob URLs; LRU order keeps in-DOM images safe from eviction.
-const MAX_MEMO_ENTRIES = 512
+// Every entry pins an image in memory, so low-memory devices keep far fewer.
+const MAX_MEMO_ENTRIES = isLowMemoryDevice() ? 96 : 512
+// Enough for the posters on screen; the rest reload from IndexedDB when scrolled back to.
+const PRESSURE_MEMO_ENTRIES = 48
+
+function trimMemo(limit: number): void {
+  while (objectUrlMemo.size > limit) {
+    const oldestKey = objectUrlMemo.keys().next().value
+    if (oldestKey === undefined) break
+    const oldestUrl = objectUrlMemo.get(oldestKey)
+    objectUrlMemo.delete(oldestKey)
+    if (oldestUrl) URL.revokeObjectURL(oldestUrl)
+  }
+}
+
+onMemoryPressure(() => trimMemo(PRESSURE_MEMO_ENTRIES))
 
 // Reads a memoized object URL and refreshes its recency (Map insertion order).
 function memoGet(cacheKey: string): string | undefined {
@@ -153,13 +169,7 @@ function memoAdopt(cacheKey: string, blob: Blob): string {
   if (existing) return existing
   const objectUrl = URL.createObjectURL(blob)
   objectUrlMemo.set(cacheKey, objectUrl)
-  while (objectUrlMemo.size > MAX_MEMO_ENTRIES) {
-    const oldestKey = objectUrlMemo.keys().next().value
-    if (oldestKey === undefined) break
-    const oldestUrl = objectUrlMemo.get(oldestKey)
-    objectUrlMemo.delete(oldestKey)
-    if (oldestUrl) URL.revokeObjectURL(oldestUrl)
-  }
+  trimMemo(MAX_MEMO_ENTRIES)
   return objectUrl
 }
 

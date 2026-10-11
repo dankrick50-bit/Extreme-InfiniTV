@@ -46,6 +46,8 @@ mod vod_audio_proxy;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod vod_proxy;
 
+mod downloader;
+
 mod warmup;
 
 #[cfg(not(target_os = "ios"))]
@@ -215,6 +217,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_opener::init())
         .manage(warmup::WarmupState::default())
+        .manage(downloader::DownloaderState::default())
         .manage(receiver::ReceiverState::default());
 
     #[cfg(not(target_os = "ios"))]
@@ -282,6 +285,11 @@ pub fn run() {
             vod_proxy::register_vod_proxy,
             vod_proxy::register_vod_proxy_file,
             vod_proxy::unregister_vod_proxy,
+            downloader::download_enqueue,
+            downloader::download_cancel,
+            downloader::download_status,
+            downloader::download_ack,
+            downloader::download_set_limit,
             warmup::warmup_start,
             warmup::warmup_status,
             warmup::warmup_cancel,
@@ -305,6 +313,11 @@ pub fn run() {
         receiver::receiver_discover,
         receiver::device_hostname,
         safe_fetch::probe_manifest,
+        downloader::download_enqueue,
+        downloader::download_cancel,
+        downloader::download_status,
+        downloader::download_ack,
+        downloader::download_set_limit,
         warmup::warmup_start,
         warmup::warmup_status,
         warmup::warmup_cancel,

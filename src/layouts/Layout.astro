@@ -119,7 +119,16 @@ const appMode = import.meta.env.PUBLIC_APP_MODE || ""
           document.documentElement.dataset.tv = "1";
           localStorage.setItem("xt_is_tv", "1");
         }
-        if (perfStored === null && isTvDevice) {
+        // Phones and tablets with little RAM get the same lighter defaults as TVs, on first run only.
+        var isLowRamDevice = false;
+        if (perfStored === null && !isTvDevice) {
+          try {
+            if (window.AndroidDeviceInfo && typeof window.AndroidDeviceInfo.isLowRam === "function") {
+              isLowRamDevice = !!window.AndroidDeviceInfo.isLowRam();
+            }
+          } catch (e) {}
+        }
+        if (perfStored === null && (isTvDevice || isLowRamDevice)) {
           localStorage.setItem("xt_perf_mode", "1");
           localStorage.setItem("xt_perf_mode_auto", "1");
           perfStored = "1";

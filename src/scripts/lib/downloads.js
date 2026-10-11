@@ -12,6 +12,7 @@ import {
 } from "@/scripts/lib/account-info.js"
 import { safeHttpUrl } from "@/scripts/lib/creds.js"
 import * as AFs from "@/scripts/lib/android-fs.js"
+import * as Native from "@/scripts/lib/download-native.js"
 import { notify } from "@/scripts/lib/notify"
 import { t } from "@/scripts/lib/i18n.js"
 import { sanitizeFilename } from "@/scripts/lib/format.ts"
@@ -683,6 +684,117 @@ function tryRunNext() {
   }
 }
 
+// ----------------------------
+// Native engine: owns the queue and the transfer, so a download survives page navigation and a
+// backgrounded app. The in-page path above stays as the fallback where the engine can't be used.
+// ----------------------------
+const nativeIds = new Set()
+// A resume right after a pause has to wait for the engine to finish letting go first.
+const nativeCancels = new Map()
+
+function cancelInNative(id) {
+  nativeIds.delete(id)
+  const pending = Native.cancelNativeDownload(id).finally(() => {
+    if (nativeCancels.get(id) === pending) nativeCancels.delete(id)
+  })
+  nativeCancels.set(id, pending)
+  return pending
+}
+
+async function finishNativeDownload(job) {
+  const item = getItem(job.id)
+  if (!item || item.status === "done") return
+  if (AFs.isAndroidUri(item.path)) await AFs.publishFile(item.path)
+  const size = job.bytesTotal || job.bytesDone || item.bytesDone || 0
+  updateItem(job.id, { status: "done", bytesDone: size, bytesTotal: size, error: "" })
+  lockRetryCount.delete(job.id)
+  writeMetaSidecar(getItem(job.id))
+  writeNfoSidecar(getItem(job.id))
+  notifyDownloadComplete(getItem(job.id))
+}
+
+function applyNativeStatus(job) {
+  const item = getItem(job.id)
+  // Removed or paused here while the engine still had it: make the engine let go.
+  if (!item || (item.status === "paused" && item.userPaused)) {
+    if (!nativeCancels.has(job.id)) cancelInNative(job.id)
+    return
+  }
+  const sizes = { bytesDone: job.bytesDone || 0 }
+  if (job.bytesTotal > 0) sizes.bytesTotal = job.bytesTotal
+  switch (job.phase) {
+    case "queued":
+      nativeIds.add(job.id)
+      updateItem(job.id, { status: "queued", error: "" })
+      break
+    case "downloading":
+      nativeIds.add(job.id)
+      updateItem(job.id, { ...sizes, status: "downloading", error: "" })
+      break
+    // The engine is already retrying by itself; "stalled" is how the list shows a wait.
+    case "retrying":
+      nativeIds.add(job.id)
+      updateItem(job.id, { ...sizes, status: "stalled", error: job.error || "" })
+      break
+    case "done":
+      nativeIds.delete(job.id)
+      finishNativeDownload(job)
+        .catch((e) => log.error("[xt:download] finishing a native download failed", e))
+        .finally(() => Native.acknowledgeNativeDownload(job.id))
+      break
+    case "error": {
+      nativeIds.delete(job.id)
+      const message = job.error || "Download failed."
+      updateItem(job.id, {
+        ...sizes,
+        status: "error",
+        error: isFileLockError(message)
+          ? "The file is in use by another program. Close it (e.g. a media player) and tap Resume."
+          : message,
+      })
+      Native.acknowledgeNativeDownload(job.id)
+      break
+    }
+  }
+}
+
+/** Hands a download to the native engine. False means the in-page path has to take it. */
+async function startViaNative(id) {
+  if (!Native.nativeDownloadsAvailable()) return false
+  if (!(await Native.connectNativeDownloads(applyNativeStatus))) return false
+  await nativeCancels.get(id)
+  if (nativeIds.has(id)) return true
+  const item = getItem(id)
+  if (!item) return true
+
+  let destination
+  try {
+    if (AFs.isAndroidUri(item.path)) {
+      const fd = Native.openAndroidDescriptor(await ensureAndroidDestFile(id, item))
+      if (fd < 0) return false
+      destination = { fd }
+    } else {
+      destination = { path: item.path }
+    }
+  } catch (e) {
+    log.warn("[xt:download] native destination unavailable, using the in-page path:", e)
+    return false
+  }
+
+  nativeIds.add(id)
+  updateItem(id, { status: "queued", error: "", userPaused: false })
+  try {
+    applyNativeStatus(
+      await Native.enqueueNativeDownload({ id, url: item.url, title: item.title, ...destination })
+    )
+  } catch (e) {
+    nativeIds.delete(id)
+    log.error("[xt:download] native enqueue failed", { id, path: item.path, error: e })
+    updateItem(id, { status: "error", error: String(e?.message || e || "Failed") })
+  }
+  return true
+}
+
 export async function startDownload({ url, title, ext, source, nfo }) {
   if (!isTauri) {
     throw new Error("Downloads are only available in the desktop build.")
@@ -742,6 +854,7 @@ export async function startDownload({ url, title, ext, source, nfo }) {
   list.unshift(item)
   writeState(list)
 
+  if (await startViaNative(id)) return id
   if (willRun) runDownload(id)
   else queuedIds.push(id)
   return id
@@ -755,6 +868,17 @@ export function resumeDownload(id) {
   if (!item) return
   if (item.status === "done") return
   updateItem(id, { userPaused: false })
+  if (Native.nativeDownloadsAvailable()) {
+    startViaNative(id).then((handled) => {
+      if (!handled) resumeInPage(id)
+    })
+    return
+  }
+  resumeInPage(id)
+}
+
+function resumeInPage(id) {
+  if (activeAborts.has(id) || queuedIds.includes(id)) return
   if (activeAborts.size < maxConcurrent()) {
     runDownload(id)
   } else {
@@ -764,6 +888,13 @@ export function resumeDownload(id) {
 }
 
 export function pauseDownload(id) {
+  const live = ["downloading", "queued", "stalled"].includes(getItem(id)?.status)
+  if (live && Native.nativeDownloadsAvailable() && !activeAborts.has(id) && !queuedIds.includes(id)) {
+    updateItem(id, { status: "paused", error: "", userPaused: true })
+    cancelInNative(id)
+    return
+  }
+
   const ac = activeAborts.get(id)
   if (ac) {
     updateItem(id, { status: "paused", userPaused: true })
@@ -792,6 +923,9 @@ export async function removeDownload(id) {
 
   const list = readState().filter((item) => item.id !== id)
   writeState(list)
+
+  // Waits for the engine to close the file; Windows refuses to delete one that is still open.
+  await cancelInNative(id)
 
   if (isTauri && item?.path) {
     if (AFs.isAndroidUri(item.path)) {
@@ -1235,10 +1369,19 @@ export function getRowThroughputEwma(id) {
       toResume.push(d.id)
     } else if (d.status === "paused" && !d.userPaused) {
       toResume.push(d.id)
+    } else if (d.status === "stalled" && !d.userPaused && Native.nativeDownloadsAvailable()) {
+      // The native engine was mid-retry when the app closed; it picks up where the file ends.
+      toResume.push(d.id)
     }
   }
+  if (isTauri) Native.connectNativeDownloads(applyNativeStatus)
   setTimeout(() => {
-    for (const id of toResume) resumeDownload(id)
+    for (const id of toResume) {
+      // The list is from page load; skip anything paused or finished since then.
+      const current = getItem(id)
+      if (!current || current.userPaused || current.status === "done") continue
+      resumeDownload(id)
+    }
   }, 1500)
 })()
 

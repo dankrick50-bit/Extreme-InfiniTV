@@ -1,0 +1,12 @@
+# Cross-platform ACL for the native download engine, granted from default.json.
+
+[[permission]]
+identifier = "allow-download-commands"
+description = "Local-origin access to the native download engine."
+commands.allow = [
+    "download_enqueue",
+    "download_cancel",
+    "download_status",
+    "download_ack",
+    "download_set_limit",
+]

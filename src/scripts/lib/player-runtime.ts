@@ -3,6 +3,8 @@
 import { log, redactUrl } from "@/scripts/lib/log.js"
 import { DEFAULT_BROWSER_UA } from "@/scripts/lib/provider-fetch.js"
 import { splitUrlAuth } from "@/scripts/lib/url-auth.js"
+// Side effect: parks native downloads while a stream is open on a one-connection account.
+import "@/scripts/lib/download-native.js"
 import { clearKeyAvailable, isParseFailureDetail } from "@/scripts/lib/codec-hints"
 import { t } from "@/scripts/lib/i18n.js"
 import { escapeHtml } from "@/scripts/lib/format.js"

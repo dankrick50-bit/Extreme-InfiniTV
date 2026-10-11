@@ -1,5 +1,6 @@
 package com.infinitel8p.xtream
 
+import android.app.ActivityManager
 import android.content.Context
 import android.os.Bundle
 import android.os.VibrationEffect
@@ -262,6 +263,19 @@ class DeviceInfoBridge(private val activity: TauriActivity) {
 
   @JavascriptInterface
   fun isTv(): Boolean = isLeanback() || isTelevisionUiMode()
+
+  // Devices sold with 3 GB or less report a little under that; they get the lighter defaults.
+  @JavascriptInterface
+  fun isLowRam(): Boolean {
+    return try {
+      val manager = activity.getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+      val info = ActivityManager.MemoryInfo()
+      manager.getMemoryInfo(info)
+      manager.isLowRamDevice || info.totalMem <= 3_400_000_000L
+    } catch (e: Throwable) {
+      false
+    }
+  }
 
   @JavascriptInterface
   fun getInstallSource(): String {
@@ -1122,6 +1136,37 @@ class ReceiverKeepAliveBridge(private val activity: MainActivity) {
   @JavascriptInterface
   fun setReceiverPageForeground(active: Boolean) {
     activity.receiverPageForeground = active
+  }
+}
+
+// Gives the native download engine a way to write into the user's Downloads folder, and starts the
+// service that keeps downloads running while the screen is off.
+class DownloadsBridge(private val activity: MainActivity) {
+  // Returns a read/write descriptor the caller now owns, or -1 when this destination can't provide one.
+  @JavascriptInterface
+  fun openDescriptor(uri: String): Int {
+    return try {
+      val parsed = Uri.parse(uri)
+      if (parsed.scheme != "content") return -1
+      activity.contentResolver.openFileDescriptor(parsed, "rw")?.detachFd() ?: -1
+    } catch (error: Throwable) {
+      Log.w("Downloads", "openDescriptor failed", error)
+      -1
+    }
+  }
+
+  @JavascriptInterface
+  fun startService(statusFilePath: String): Boolean {
+    return try {
+      val intent = Intent(activity, DownloadForegroundService::class.java)
+        .setAction(DownloadForegroundService.ACTION_START)
+        .putExtra(DownloadForegroundService.EXTRA_STATUS_FILE, statusFilePath)
+      activity.startForegroundService(intent)
+      true
+    } catch (error: Throwable) {
+      Log.w("Downloads", "startService failed", error)
+      false
+    }
   }
 }
 
@@ -2172,6 +2217,7 @@ class MainActivity : TauriActivity() {
     nsdBridge = nsd
     webView.addJavascriptInterface(nsd, "AndroidNsd")
     webView.addJavascriptInterface(ReceiverKeepAliveBridge(this), "AndroidReceiverKeepAlive")
+    webView.addJavascriptInterface(DownloadsBridge(this), "AndroidDownloads")
     val receiverWake = ReceiverWakeBridge(this)
     webView.addJavascriptInterface(receiverWake, "AndroidReceiverWake")
     receiverWakeBridge = receiverWake
@@ -2300,6 +2346,12 @@ class MainActivity : TauriActivity() {
     } else {
       hostedWebView?.evaluateJavascript("window.__xtPipExitFullscreen?.()", null)
     }
+  }
+
+  // Passes Android's memory warnings to the page, which drops caches it can rebuild from disk.
+  override fun onTrimMemory(level: Int) {
+    super.onTrimMemory(level)
+    hostedWebView?.evaluateJavascript("window.__xtTrimMemory && window.__xtTrimMemory($level)", null)
   }
 
   override fun onResume() {
