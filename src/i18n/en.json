@@ -762,6 +762,7 @@
   "detail.error.noSeriesId": "No series ID was given.",
   "detail.error.noPlaylist": "No playlist is selected. Add one in Settings.",
   "detail.error.noStream": "Couldn't get a stream URL for this movie.",
+  "detail.error.noStreamNoCreds": "This playlist has no Xtream credentials, so a stream URL can't be built for this movie.",
   "detail.error.cantLoad": "Couldn't load this movie",
   "detail.error.cantLoadSeries": "Couldn't load this series",
   "detail.error.providerLocal": "Couldn't reach the provider. Local copy is available - tap Play.",

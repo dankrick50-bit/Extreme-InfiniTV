@@ -69,6 +69,7 @@ export function mapXtreamVodRows(rawRows, categoryMap) {
       }
       const added = Number(m.added) || 0
       const tmdb = Number(m.tmdb) || Number(m.tmdb_id) || null
+      const ext = String(m.container_extension || "").replace(/^\.+/, "").trim().toLowerCase()
       return {
         id,
         name,
@@ -81,6 +82,7 @@ export function mapXtreamVodRows(rawRows, categoryMap) {
         added,
         norm: normalize(`${name} ${category} ${year}`),
         tmdb,
+        container_extension: ext || null,
       }
     })
     .filter((m) => m.id && m.name)

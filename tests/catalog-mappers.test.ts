@@ -168,6 +168,20 @@ describe("mapXtreamVodRows", () => {
     )
     expect(rows).toEqual([])
   })
+
+  // Playback builds /movie/<user>/<pass>/<id>.<ext> from this without waiting on get_vod_info.
+  it("keeps container_extension, normalized, and null when absent", () => {
+    const rows = mapXtreamVodRows(
+      [
+        { stream_id: 1, name: "A", container_extension: "MKV" },
+        { stream_id: 2, name: "B", container_extension: ".mp4" },
+        { stream_id: 3, name: "C" },
+        { stream_id: 4, name: "D", container_extension: "  " },
+      ],
+      new Map()
+    )
+    expect(rows.map((row) => row.container_extension)).toEqual(["mkv", "mp4", null, null])
+  })
 })
 
 describe("mapXtreamSeriesRows", () => {

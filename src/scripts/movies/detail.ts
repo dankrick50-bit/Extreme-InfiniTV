@@ -8,9 +8,10 @@ import {
   isTauri,
 } from "@/scripts/lib/creds.js"
 import { xtreamApiFetch, resolveStreamUrl } from "@/scripts/lib/xtream-api.js"
+import { buildMovieStreamUrl } from "@/scripts/lib/stream-urls.ts"
 import { isCastRoutingActive, routePlayToCast } from "@/scripts/lib/tv-cast.js"
 import { isCastableSrc, buildVodCastDescriptor } from "@/scripts/lib/tv-cast-descriptor.js"
-import { getCached, setCached } from "@/scripts/lib/cache.js"
+import { getCached, setCached, hydrate as hydrateCache } from "@/scripts/lib/cache.js"
 import { ensureVod } from "@/scripts/lib/catalog.js"
 import {
   ensureLoaded as ensurePrefsLoaded,
@@ -279,19 +280,8 @@ function applyVodInfo(data) {
     builder = (c) => `${fmtBase(c.host, c.port).replace(/\/+$/, "")}/${relPath}`
     src = builder(creds)
   } else if (creds.host && creds.user && creds.pass) {
-    const rawExt =
-      movieData.container_extension || info.container_extension || "mp4"
-    const ext = String(rawExt).replace(/^\.+/, "").toLowerCase() || "mp4"
-    builder = (c) =>
-      fmtBase(c.host, c.port) +
-      "/movie/" +
-      encodeURIComponent(c.user) +
-      "/" +
-      encodeURIComponent(c.pass) +
-      "/" +
-      encodeURIComponent(movieId) +
-      "." +
-      ext
+    const infoExt = movieData.container_extension || info.container_extension || null
+    builder = (c) => buildMovieStreamUrl(c, movieId, infoExt || movie?.container_extension || null)
     src = builder(creds)
   }
 
@@ -480,6 +470,7 @@ function adoptCatalogRow(catalog) {
   if (!row) return
   if (!movie.category) movie.category = row.category || null
   if (!movie.year) movie.year = row.year || ""
+  if (!movie.container_extension) movie.container_extension = row.container_extension || null
 }
 
 // The in-memory catalog is empty on a deep link, so load it instead of giving up on the rail.
@@ -872,6 +863,11 @@ function retirePreviousPlayback() {
   qualityChipDetach = null
 }
 
+function noStreamMessage() {
+  if (!(creds.host && creds.user && creds.pass)) return t("detail.error.noStreamNoCreds")
+  return t("detail.error.noStream")
+}
+
 async function startPlayback(options = {}) {
   if (!movie) return
   if (isTauri && isCastRoutingActive() && !options.forceLocal) {
@@ -919,12 +915,15 @@ async function startPlayback(options = {}) {
     waited += 100
   }
   if (!detailSrc) {
-    if (plotEl) plotEl.textContent = t("detail.error.noStream")
+    if (plotEl) plotEl.textContent = noStreamMessage()
     return
   }
 
   // Probe the URL against the configured backup domains
   if (detailSrcBuilder) {
+    // After a full page load the catalog is only in IDB, and the builder reads its container_extension.
+    await hydrateCache(activePlaylistId, "vod").catch(() => {})
+    adoptCatalogRow(getCached(activePlaylistId, "vod")?.data || [])
     const resolved = await resolveStreamUrl(detailSrcBuilder)
     if (resolved) detailSrc = resolved
   }
@@ -1272,7 +1271,8 @@ function findMovieDownload() {
 
 function applyDownloadState() {
   if (!downloadBtn) return
-  if (isDownloadable()) downloadBtn.removeAttribute("hidden")
+  // Outside the desktop shell the button can only hand the stream URL to the browser, so it needs one.
+  if (isDownloadable() || detailSrc) downloadBtn.removeAttribute("hidden")
   const d = findMovieDownload()
   downloadBtn.removeAttribute("disabled")
   if (!d) {
@@ -1497,6 +1497,14 @@ async function boot() {
 
   if (dl?.url) {
     detailSrc = dl.url
+    applyDownloadState()
+    externalBtnHandle?.refresh()
+    playTvBtnHandle?.refresh()
+  } else if (creds.host && creds.user && creds.pass) {
+    // get_vod_streams already carries everything the URL needs; get_vod_info only refines it,
+    // so a slow or failing info call must never leave Play without a source.
+    detailSrcBuilder = (c) => buildMovieStreamUrl(c, movieId, movie?.container_extension || null)
+    detailSrc = detailSrcBuilder(creds)
     applyDownloadState()
     externalBtnHandle?.refresh()
     playTvBtnHandle?.refresh()

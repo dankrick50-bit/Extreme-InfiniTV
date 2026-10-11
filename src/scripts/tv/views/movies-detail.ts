@@ -70,6 +70,7 @@ interface CatalogRow {
   plot: string
   added: number
   tmdb: number | null
+  container_extension?: string | null
 }
 
 interface Creds {
@@ -350,7 +351,7 @@ const view: TvView = {
       const movieData = data?.movie_data || data?.info || data || {}
       const info = data?.info || data?.movie_data || {}
 
-      const rawExt = movieData.container_extension || info.container_extension || "mp4"
+      const rawExt = movieData.container_extension || info.container_extension || containerExt
       containerExt = String(rawExt).replace(/^\.+/, "").toLowerCase() || "mp4"
 
       const apiName = movieData.name || info.name || ""
@@ -541,6 +542,7 @@ const view: TvView = {
 
       const cachedCatalog = (getCached(activePlaylistId, "vod")?.data || []) as CatalogRow[]
       const catalogRow = cachedCatalog.find((row) => Number(row.id) === movieId) || null
+      if (catalogRow?.container_extension) containerExt = catalogRow.container_extension
       movie = catalogRow || {
         id: movieId,
         name: stubName(),

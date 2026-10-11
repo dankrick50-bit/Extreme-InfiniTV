@@ -16,7 +16,7 @@ import {
   getCached,
   hydrate as hydrateCache,
 } from "@/scripts/lib/cache.js"
-import { rowsNeedTmdbBackfill } from "@/scripts/lib/catalog-mappers.js"
+import { mapXtreamVodRows, rowsNeedTmdbBackfill } from "@/scripts/lib/catalog-mappers.js"
 import { triggerTmdbBackfillOnce } from "@/scripts/lib/tmdb-backfill.ts"
 import {
   ensureLoaded as ensurePrefsLoaded,
@@ -857,43 +857,7 @@ async function fetchMovieRows() {
   const arr = Array.isArray(parsed)
     ? parsed
     : parsed?.movies || parsed?.results || []
-  return (arr || [])
-    .map((movie) => {
-      const name = String(movie.name || movie.title || "")
-      const id = Number(movie.stream_id || movie.id)
-      const logo = movie.stream_icon || movie.cover || null
-      const year = String(movie.year || movie.releaseDate || "").trim() || ""
-      const rating = movie.rating || movie.rating_5based || movie.vote_average || ""
-      const duration = movie.duration || movie.runtime || movie.duration_secs || ""
-      const categoryId =
-        (Array.isArray(movie.category_ids) &&
-          movie.category_ids.length &&
-          movie.category_ids[0]) ||
-        movie.category_id
-      let category = String(movie.category_name || "").trim()
-      if (!category && categoryId != null && catMap?.size) {
-        category = catMap.get(String(categoryId)) || ""
-      }
-      const added = Number(movie.added) || 0
-      const tmdb = Number(movie.tmdb) || Number(movie.tmdb_id) || null
-      return {
-        id,
-        name,
-        logo: logo || null,
-        year,
-        rating: rating ? String(rating) : "",
-        duration: duration ? String(duration) : "",
-        category,
-        plot: "",
-        added,
-        norm: normalize(`${name} ${category} ${year}`),
-        tmdb,
-      }
-    })
-    .filter((movie) => movie.id && movie.name)
-    .sort((a, b) =>
-      a.name.localeCompare(b.name, "en", { sensitivity: "base" })
-    )
+  return mapXtreamVodRows(arr, catMap)
 }
 
 async function loadMovies() {
