@@ -75,7 +75,7 @@ pub fn install(app: &tauri::App) -> Result<(), Box<dyn std::error::Error>> {
 
     let tray_result = TrayIconBuilder::with_id("main")
         .icon(icon)
-        .tooltip("Extreme InfiniTV")
+        .tooltip(app.config().product_name.as_deref().unwrap_or("Extreme InfiniTV"))
         .menu(&menu)
         .show_menu_on_left_click(false)
         .on_menu_event(|app_handle, event| {

@@ -74,10 +74,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Updater artifacts need the author's private signing key, which a fork does not have.
+      # Fork branding, and no updater artifacts (those need the author's private signing key).
       - name: Write build override
-        shell: bash
-        run: echo '{"bundle":{"createUpdaterArtifacts":false}}' > fork-override.json
+        run: node build-tools/make-build-config.mjs --out fork-override.json
 
       - name: Build
         run: pnpm tauri build ${{ matrix.args }} --config fork-override.json
@@ -88,10 +87,11 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
           mkdir -p out
-          for f in src-tauri/target/release/bundle/deb/*.deb; do cp "$f" out/Extreme-InfiniTV-ubuntu-amd64.deb; done
-          for f in src-tauri/target/release/bundle/appimage/*.AppImage; do cp "$f" out/Extreme-InfiniTV-linux-x86_64.AppImage; done
-          for f in src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg; do cp "$f" out/Extreme-InfiniTV-macos-universal.dmg; done
-          for f in src-tauri/target/release/bundle/nsis/*-setup.exe; do cp "$f" out/Extreme-InfiniTV-windows-x64-setup.exe; done
+          NAME="$(node -p "require('./build-tools/brand.json').productName")"
+          for f in src-tauri/target/release/bundle/deb/*.deb; do cp "$f" "out/$NAME-ubuntu-amd64.deb"; done
+          for f in src-tauri/target/release/bundle/appimage/*.AppImage; do cp "$f" "out/$NAME-linux-x86_64.AppImage"; done
+          for f in src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg; do cp "$f" "out/$NAME-macos-universal.dmg"; done
+          for f in src-tauri/target/release/bundle/nsis/*-setup.exe; do cp "$f" "out/$NAME-windows-x64-setup.exe"; done
           ls -la out
           if [ -z "$(ls -A out)" ]; then
             echo "::error::The build finished but produced no installer"
@@ -190,8 +190,9 @@ jobs:
             find src-tauri/gen/android/app/build/outputs -type f
             exit 1
           fi
-          cp "$APK" out/Extreme-InfiniTV-android-fireos.apk
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify out/Extreme-InfiniTV-android-fireos.apk
+          NAME="$(node -p "require('./build-tools/brand.json').productName")"
+          cp "$APK" "out/$NAME-android-fireos.apk"
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "out/$NAME-android-fireos.apk"
           ls -la out
 
       - uses: actions/upload-artifact@v4

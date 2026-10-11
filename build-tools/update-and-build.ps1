@@ -133,13 +133,10 @@ if ($SkipBuild) {
   exit 0
 }
 
-$config = Get-Content -LiteralPath (Join-Path $RepoPath "src-tauri\tauri.conf.json") -Raw | ConvertFrom-Json
-$before = [string]$config.build.beforeBuildCommand
-if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { $before = [regex]::Replace($before, '(?<!corepack )\bpnpm\b', 'corepack pnpm') }
-# The author's updater signing key is not available to a fork, so updater artifacts are switched off.
-$override = @{ build = @{ beforeBuildCommand = $before }; bundle = @{ createUpdaterArtifacts = $false } } | ConvertTo-Json -Depth 5
-$overridePath = Join-Path $env:TEMP "infinitv-build-override.json"
-[IO.File]::WriteAllText($overridePath, $override, (New-Object Text.UTF8Encoding($false)))
+$overridePath = Join-Path $env:TEMP "fork-build-override.json"
+$configArgs = @((Join-Path $PSScriptRoot "make-build-config.mjs"), "--out", $overridePath)
+if (-not (Get-Command pnpm -ErrorAction SilentlyContinue)) { $configArgs += "--corepack" }
+if ((Run "node" $configArgs) -ne 0) { Undo-Merge; Stop-With 4 "Could not prepare the build configuration." }
 
 Say "Building the Windows installer (this takes several minutes)..."
 $code = Run "corepack" @("pnpm", "exec", "tauri", "build", "--bundles", "nsis", "--config", $overridePath)
