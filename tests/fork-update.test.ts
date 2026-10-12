@@ -195,6 +195,18 @@ describe("what each device is offered", () => {
     expect(downloadFor(feed(), "other")).toBe(feed().page)
   })
 
+  it("gives an Android device the build made for its processor, else the one that fits all", () => {
+    const fitted = feed()
+    fitted.assets["android-arm64"] = `${DOWNLOAD}/App-fire-hd10-2023.apk`
+    fitted.assets["android-armv7"] = `${DOWNLOAD}/App-fire-tv-stick-4k.apk`
+    expect(downloadFor(fitted, "android", "arm64-v8a")).toMatch(/fire-hd10-2023.apk$/)
+    expect(downloadFor(fitted, "android", "armeabi-v7a")).toMatch(/fire-tv-stick-4k.apk$/)
+    expect(downloadFor(fitted, "android", "x86_64")).toMatch(/android-fireos.apk$/)
+    expect(downloadFor(fitted, "android", "")).toMatch(/android-fireos.apk$/)
+    // A release without the fitted builds still updates every device.
+    expect(downloadFor(feed(), "android", "arm64-v8a")).toMatch(/android-fireos.apk$/)
+  })
+
   it("describes a build by when it was made, since the version number does not change", () => {
     const status = statusFromFeed(feed(), INSTALLED, "1.9.0", "android")
     expect(status.updateAvailable).toBe(true)
@@ -353,6 +365,19 @@ describe("the published feed (build-tools/make-update-feed.mjs)", () => {
     expect((feed.platforms as Record<string, unknown>)["windows-x86_64-nsis"]).toEqual({ signature: "win-sig", url: `${DOWNLOAD}/App-windows-x64-setup.exe` })
     expect(Object.keys(feed.kd.assets).sort()).toEqual(["android", "appimage", "deb", "macos", "windows"])
     expect(feed.kd.build).toBe(2000)
+  })
+
+  it("lists the device-fitted Android builds when the release has them", () => {
+    const feed = makeUpdateFeed({
+      files: [...files, "App-fire-hd10-2023.apk", "App-fire-tv-stick-4k.apk"],
+      signatures: {},
+      version: "1.9.0",
+      build: { stamp: 2000, commit: "bbbbbbb" },
+      urls,
+    })
+    expect(feed.kd.assets["android-arm64"]).toBe(`${DOWNLOAD}/App-fire-hd10-2023.apk`)
+    expect(feed.kd.assets["android-armv7"]).toBe(`${DOWNLOAD}/App-fire-tv-stick-4k.apk`)
+    expect(feed.kd.assets.android).toBe(`${DOWNLOAD}/App-android-fireos.apk`)
   })
 
   it("is read back by the app as the same build", () => {

@@ -25,6 +25,9 @@ $base = "https://github.com/$($brand.updateRepo)/releases/download/$($brand.upda
 # Which folders each installer goes to.
 $plan = @(
   @{ File = "$name-android-fireos.apk"; Folders = @("Android", "FireOS") },
+  # The same app made smaller for one device each; either can be replaced by the one above.
+  @{ File = "$name-fire-hd10-2023.apk"; Folders = @("FireOS\Fire-HD-10-2023") },
+  @{ File = "$name-fire-tv-stick-4k.apk"; Folders = @("FireOS\Fire-TV-Stick-4K") },
   @{ File = "$name-ubuntu-amd64.deb"; Folders = @("Ubuntu") },
   @{ File = "$name-linux-x86_64.AppImage"; Folders = @("Ubuntu") },
   @{ File = "$name-macos-universal.dmg"; Folders = @("macOS") }

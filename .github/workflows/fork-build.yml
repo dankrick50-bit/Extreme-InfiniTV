@@ -211,6 +211,32 @@ jobs:
           "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "out/$NAME-android-fireos.apk"
           ls -la out
 
+      # The same app carrying one processor family's code only, so it is smaller to download, store
+      # and install: 64-bit ARM is what the Fire HD 10 (2023) runs, 32-bit ARM what the Fire TV
+      # Stick 4K runs. Same package and signing key as the build above, so any of the three
+      # installs over any other. The Rust code is already compiled; this only repackages.
+      - name: Build device APKs
+        env:
+          NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.13846066
+          XT_SKIP_FFMPEG_SIDECAR: "1"
+        run: pnpm tauri android build --apk --split-per-abi --target aarch64 --target armv7
+
+      - name: Collect device APKs
+        run: |
+          set -euo pipefail
+          NAME="$(node -p "require('./build-tools/brand.json').productName")"
+          APKS=src-tauri/gen/android/app/build/outputs/apk
+          find "$APKS" -name "*.apk" -printf '%s %p\n'
+          ARM64=$(find "$APKS" -name "*arm64*release*.apk" ! -name "*unsigned*" | head -1)
+          ARMV7=$(find "$APKS" -name "*-arm-*release*.apk" ! -name "*unsigned*" | head -1)
+          if [ -n "$ARM64" ]; then cp "$ARM64" "out/$NAME-fire-hd10-2023.apk"; else echo "::warning::No 64-bit ARM APK was produced"; fi
+          if [ -n "$ARMV7" ]; then cp "$ARMV7" "out/$NAME-fire-tv-stick-4k.apk"; else echo "::warning::No 32-bit ARM APK was produced"; fi
+          for f in out/*-fire-*.apk; do
+            [ -e "$f" ] || continue
+            "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "$f" | head -2
+          done
+          ls -la out
+
       - uses: actions/upload-artifact@v4
         with:
           name: installers-android
@@ -250,4 +276,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "Fork build $VERSION (${GITHUB_SHA::7})" \
-            --notes "Builds of this fork at commit $GITHUB_SHA. Windows: setup.exe. Ubuntu: .deb (or the portable .AppImage). macOS: .dmg. Android and Fire OS: .apk. Installed apps find this build through latest.json."
+            --notes "Builds of this fork at commit $GITHUB_SHA. Windows: setup.exe. Ubuntu: .deb (or the portable .AppImage). macOS: .dmg. Android and Fire OS: android-fireos.apk fits every device; fire-hd10-2023.apk (64-bit ARM) and fire-tv-stick-4k.apk (32-bit ARM) are the same app made smaller for those devices. Installed apps find this build through latest.json."

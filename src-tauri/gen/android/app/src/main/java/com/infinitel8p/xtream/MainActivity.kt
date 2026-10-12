@@ -296,6 +296,10 @@ class DeviceInfoBridge(private val activity: TauriActivity) {
   @JavascriptInterface
   fun getPackageName(): String = activity.packageName
 
+  // The processor family this device runs ("arm64-v8a", "armeabi-v7a"); picks the matching, smaller update.
+  @JavascriptInterface
+  fun getPrimaryAbi(): String = Build.SUPPORTED_ABIS.firstOrNull() ?: ""
+
   @JavascriptInterface
   fun getDeviceName(): String {
     return try {

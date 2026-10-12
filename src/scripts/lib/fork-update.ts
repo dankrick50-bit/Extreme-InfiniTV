@@ -121,9 +121,27 @@ export function detectPlatform(userAgent: string = typeof navigator !== "undefin
   return "other"
 }
 
-/** The installer to hand this device, or the release page where there is a choice to make (Linux). */
-export function downloadFor(feed: ForkFeed, platform: ForkPlatform): string {
-  const asset = platform === "windows" || platform === "android" || platform === "macos" ? feed.assets[platform] : undefined
+/** Android builds made for one processor family, by the name Android gives that family. */
+const ANDROID_ASSET_BY_ABI: Record<string, string> = { "arm64-v8a": "android-arm64", "armeabi-v7a": "android-armv7" }
+
+function androidPrimaryAbi(): string {
+  try {
+    return (window as any).AndroidDeviceInfo?.getPrimaryAbi?.() || ""
+  } catch {
+    return ""
+  }
+}
+
+/**
+ * The installer to hand this device, or the release page where there is a choice to make (Linux).
+ * Android gets the build made for its processor when there is one, else the build that fits all.
+ */
+export function downloadFor(feed: ForkFeed, platform: ForkPlatform, androidAbi: string = platform === "android" ? androidPrimaryAbi() : ""): string {
+  if (platform === "android") {
+    const fitted = feed.assets[ANDROID_ASSET_BY_ABI[androidAbi] || ""]
+    return fitted || feed.assets.android || feed.page
+  }
+  const asset = platform === "windows" || platform === "macos" ? feed.assets[platform] : undefined
   return asset || feed.page
 }
 
@@ -274,7 +292,7 @@ function notifyOnce(feed: ForkFeed, platform: ForkPlatform): void {
     localStorage.setItem(NOTIFIED_KEY, String(feed.build))
   } catch {}
   const url = downloadFor(feed, platform)
-  if (platform === "android" && androidUpdateBridge()?.downloadAndInstall && feed.assets.android) {
+  if (platform === "android" && androidUpdateBridge()?.downloadAndInstall && /.apk$/i.test(url)) {
     toast({
       title: TEXT.ready,
       description: describeBuild(feed.build),

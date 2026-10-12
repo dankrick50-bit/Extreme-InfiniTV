@@ -16,6 +16,10 @@ const INSTALLERS = [
   { ending: "-ubuntu-amd64.deb", asset: "deb", targets: ["linux-x86_64-deb"] },
   { ending: "-macos-universal.dmg", asset: "macos", targets: [] },
   { ending: "-android-fireos.apk", asset: "android", targets: [] },
+  // The same app carrying only one processor family's code: a quarter of the native code to
+  // download, store and install. Named for the devices they are built for.
+  { ending: "-fire-hd10-2023.apk", asset: "android-arm64", targets: [] },
+  { ending: "-fire-tv-stick-4k.apk", asset: "android-armv7", targets: [] },
 ]
 
 /**
