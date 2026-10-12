@@ -1,4 +1,5 @@
-# Downloads the newest cloud-built installers from the fork's release into installers\<OS>\.
+# Downloads the newest cloud-built installers from the fork's release into installers\<OS>\,
+# each named with its version and build time; older ones are never removed.
 # The Windows installer is built on this PC by update-and-build, so it is left alone unless
 # -IncludeWindows is given.
 param(
@@ -34,34 +35,44 @@ $plan = @(
 )
 if ($IncludeWindows) { $plan += @{ File = "$name-windows-x64-setup.exe"; Folders = @("Windows") } }
 
+# Every build is saved under its own name (app version, then the day and time the build was
+# made), so a new download never replaces an older installer.
 try {
   $feed = Invoke-RestMethod -Uri "$base/latest.json" -TimeoutSec 30
   $built = [DateTimeOffset]::FromUnixTimeSeconds([long]$feed.kd.build).LocalDateTime
-  Write-Host ("Newest cloud build: commit {0}, made {1:yyyy-MM-dd HH:mm}" -f $feed.kd.commit, $built)
+  $label = "v{0}-{1:yyyyMMdd-HHmm}" -f $feed.version, $built
 } catch {
-  Write-Host "Could not read the build details (the release may be mid-publish). Downloading what is there."
+  Write-Host "Could not read the build details (the release may be mid-publish). Nothing was downloaded; try again in a minute."
+  exit 1
 }
+Write-Host ("Newest cloud build: {0} (commit {1})" -f $label, $feed.kd.commit)
 
 $failed = 0
 foreach ($item in $plan) {
-  $first = Join-Path (Join-Path $OutputRoot $item.Folders[0]) $item.File
+  $extension = [IO.Path]::GetExtension($item.File)
+  $saveAs = "{0}-{1}{2}" -f [IO.Path]::GetFileNameWithoutExtension($item.File), $label, $extension
+  $first = Join-Path (Join-Path $OutputRoot $item.Folders[0]) $saveAs
   $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $first)
   $partial = "$first.part"
   try {
-    Invoke-WebRequest -Uri "$base/$($item.File)" -OutFile $partial -UseBasicParsing -TimeoutSec 600
-    Move-Item -LiteralPath $partial -Destination $first -Force
-    foreach ($folder in ($item.Folders | Select-Object -Skip 1)) {
-      $copy = Join-Path (Join-Path $OutputRoot $folder) $item.File
-      $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $copy)
-      Copy-Item -LiteralPath $first -Destination $copy -Force
+    $had = Test-Path -LiteralPath $first
+    if (-not $had) {
+      Invoke-WebRequest -Uri "$base/$($item.File)" -OutFile $partial -UseBasicParsing -TimeoutSec 600
+      Move-Item -LiteralPath $partial -Destination $first
     }
-    Write-Host ("  {0,-34} {1,8:N1} MB  -> {2}" -f $item.File, ((Get-Item -LiteralPath $first).Length / 1MB), ($item.Folders -join ", "))
+    foreach ($folder in ($item.Folders | Select-Object -Skip 1)) {
+      $copy = Join-Path (Join-Path $OutputRoot $folder) $saveAs
+      $null = New-Item -ItemType Directory -Force -Path (Split-Path -Parent $copy)
+      if (-not (Test-Path -LiteralPath $copy)) { Copy-Item -LiteralPath $first -Destination $copy }
+    }
+    $note = if ($had) { "already here" } else { "downloaded" }
+    Write-Host ("  {0,-58} {1,8:N1} MB  {2,-12} -> {3}" -f $saveAs, ((Get-Item -LiteralPath $first).Length / 1MB), $note, ($item.Folders -join ", "))
   } catch {
     $failed += 1
     if (Test-Path -LiteralPath $partial) { Remove-Item -LiteralPath $partial -Force }
-    Write-Host ("  {0,-34} FAILED: {1}" -f $item.File, $_.Exception.Message)
+    Write-Host ("  {0,-58} FAILED: {1}" -f $saveAs, $_.Exception.Message)
   }
 }
 
-if ($failed) { Write-Host "$failed file(s) could not be downloaded; the older copies were kept."; exit 1 }
-Write-Host "Installers are up to date in $OutputRoot"
+if ($failed) { Write-Host "$failed file(s) could not be downloaded; nothing already on disk was changed."; exit 1 }
+Write-Host "Installers are up to date in $OutputRoot (older builds are kept beside the new ones)"

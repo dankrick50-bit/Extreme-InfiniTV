@@ -147,8 +147,15 @@ $installer = Get-ChildItem -LiteralPath $bundleDir -Filter "*-setup.exe" -ErrorA
   Where-Object { $_.LastWriteTime -ge $started } | Sort-Object LastWriteTime -Descending | Select-Object -First 1
 if (-not $installer) { Undo-Merge; Stop-With 4 "The build reported success but no new installer was found in $bundleDir." }
 
+# Saved under the app version and the day and time of the code it was built from (the same
+# naming get-installers uses), so an older installer is never replaced by a newer one.
+$brand = Get-Content -LiteralPath (Join-Path $PSScriptRoot "brand.json") -Raw | ConvertFrom-Json
+$version = (Get-Content -LiteralPath (Join-Path $RepoPath "package.json") -Raw | ConvertFrom-Json).version
+$builtFrom = [DateTimeOffset]::FromUnixTimeSeconds([long](git -C $RepoPath log -1 --format=%ct HEAD)).LocalDateTime
+$saveAs = "{0}-windows-x64-setup-v{1}-{2:yyyyMMdd-HHmm}.exe" -f $brand.productName, $version, $builtFrom
+
 $null = New-Item -ItemType Directory -Force -Path $OutputDir
-$destination = Join-Path $OutputDir $installer.Name
+$destination = Join-Path $OutputDir $saveAs
 Copy-Item -LiteralPath $installer.FullName -Destination $destination -Force
 $hash = (Get-FileHash -LiteralPath $destination -Algorithm SHA256).Hash
 Say "NEW INSTALLER: $destination"
