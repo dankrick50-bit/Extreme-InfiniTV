@@ -72,6 +72,8 @@ import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.core.content.ContextCompat
 import java.net.URL
+import java.io.IOException
+import java.net.HttpURLConnection
 
 @RequiresApi(Build.VERSION_CODES.O)
 private class RenderGoneGuardingClient(
@@ -1141,6 +1143,113 @@ class ReceiverKeepAliveBridge(private val activity: MainActivity) {
 
 // Gives the native download engine a way to write into the user's Downloads folder, and starts the
 // service that keeps downloads running while the screen is off.
+// In-app update for sideloaded installs: downloads the fork's newest APK and hands it to the system
+// installer, which asks the user to confirm. Android itself refuses the file unless it is signed
+// with the same key as the installed app, so only the fork's own builds can ever replace it.
+class UpdateBridge(
+  private val activity: MainActivity,
+  private val webViewProvider: () -> WebView?,
+) {
+  companion object {
+    private const val TAG = "AndroidUpdate"
+    private const val CONNECT_TIMEOUT_MS = 15_000
+    private const val READ_TIMEOUT_MS = 30_000
+    private const val MAX_APK_BYTES = 400L * 1024L * 1024L
+  }
+
+  private val busy = AtomicBoolean(false)
+
+  // States: "ready" (the installer is about to open) and "error" (detail says why).
+  private fun emit(state: String, detail: String) {
+    val payload = JSONObject().put("state", state).put("detail", detail).toString()
+    val script = "window.dispatchEvent(new CustomEvent('kd:update', { detail: $payload }))"
+    activity.runOnUiThread {
+      try {
+        webViewProvider()?.evaluateJavascript(script, null)
+      } catch (error: Throwable) {
+        Log.w(TAG, "emit failed", error)
+      }
+    }
+  }
+
+  // True once a download is under way (or already was); false when the address is refused.
+  @JavascriptInterface
+  fun downloadAndInstall(url: String?): Boolean {
+    val address = url?.trim() ?: ""
+    val allowedPrefix = activity.getString(R.string.kd_update_url_prefix)
+    if (address.isEmpty() || allowedPrefix.isEmpty() || !address.startsWith(allowedPrefix)) {
+      Log.w(TAG, "refused an update address outside the fork's releases")
+      return false
+    }
+    if (!busy.compareAndSet(false, true)) return true
+    Thread {
+      try {
+        val apk = download(address)
+        emit("ready", "")
+        launchInstaller(apk)
+      } catch (error: Throwable) {
+        Log.w(TAG, "update download failed", error)
+        emit("error", error.message ?: "download failed")
+      } finally {
+        busy.set(false)
+      }
+    }.start()
+    return true
+  }
+
+  private fun download(address: String): File {
+    val directory = File(activity.cacheDir, "update")
+    directory.mkdirs()
+    val partial = File(directory, "update.apk.part")
+    val finished = File(directory, "update.apk")
+    partial.delete()
+    finished.delete()
+    val connection = URL(address).openConnection() as HttpURLConnection
+    try {
+      connection.connectTimeout = CONNECT_TIMEOUT_MS
+      connection.readTimeout = READ_TIMEOUT_MS
+      connection.instanceFollowRedirects = true
+      val status = connection.responseCode
+      if (status != HttpURLConnection.HTTP_OK) throw IOException("HTTP $status")
+      var received = 0L
+      connection.inputStream.use { input ->
+        partial.outputStream().use { output ->
+          val buffer = ByteArray(64 * 1024)
+          while (true) {
+            val count = input.read(buffer)
+            if (count < 0) break
+            output.write(buffer, 0, count)
+            received += count.toLong()
+            if (received > MAX_APK_BYTES) throw IOException("file too large")
+          }
+        }
+      }
+      if (received == 0L) throw IOException("empty download")
+    } finally {
+      connection.disconnect()
+    }
+    if (!partial.renameTo(finished)) throw IOException("could not save the update")
+    return finished
+  }
+
+  private fun launchInstaller(apk: File) {
+    // The cache dir is a declared FileProvider root (res/xml/file_paths.xml).
+    val uri = FileProvider.getUriForFile(activity, "${activity.packageName}.fileprovider", apk)
+    val intent = Intent(Intent.ACTION_VIEW).apply {
+      setDataAndType(uri, "application/vnd.android.package-archive")
+      addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+    }
+    activity.runOnUiThread {
+      try {
+        activity.startActivity(intent)
+      } catch (error: Throwable) {
+        Log.w(TAG, "could not open the installer", error)
+        emit("error", "installer unavailable")
+      }
+    }
+  }
+}
+
 class DownloadsBridge(private val activity: MainActivity) {
   // Returns a read/write descriptor the caller now owns, or -1 when this destination can't provide one.
   @JavascriptInterface
@@ -2218,6 +2327,7 @@ class MainActivity : TauriActivity() {
     webView.addJavascriptInterface(nsd, "AndroidNsd")
     webView.addJavascriptInterface(ReceiverKeepAliveBridge(this), "AndroidReceiverKeepAlive")
     webView.addJavascriptInterface(DownloadsBridge(this), "AndroidDownloads")
+    webView.addJavascriptInterface(UpdateBridge(this, { hostedWebView }), "AndroidUpdate")
     val receiverWake = ReceiverWakeBridge(this)
     webView.addJavascriptInterface(receiverWake, "AndroidReceiverWake")
     receiverWakeBridge = receiverWake

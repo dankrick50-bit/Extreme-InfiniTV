@@ -1,6 +1,7 @@
-// Writes the Tauri config override for a fork build: fork branding, and no updater artifacts
-// (those need the author's private signing key).
+// Writes the Tauri config override for a fork build: fork branding, and updates that come from
+// the fork's own builds, signed with the fork's own key, never from the original app's releases.
 import { readFileSync, writeFileSync } from "node:fs"
+import { releaseUrls } from "./build-info.mjs"
 
 const root = new URL("../", import.meta.url)
 const args = process.argv.slice(2)
@@ -18,7 +19,14 @@ const override = {
   mainBinaryName: brand.binaryName,
   // Config merging replaces arrays whole, so the windows are copied from the live config with only the title changed.
   app: { windows: (config.app?.windows || []).map((window) => ({ ...window, title: brand.productName })) },
-  bundle: { createUpdaterArtifacts: false },
+  // Signed update files can only be made where the private key is (the cloud build); a build
+  // without it is still a normal installer that updates itself from the signed ones.
+  bundle: { createUpdaterArtifacts: !!process.env.TAURI_SIGNING_PRIVATE_KEY },
+}
+
+if (brand.updaterPubkey && brand.updateRepo) {
+  // With this key in place the app cannot install the original author's builds even by accident.
+  override.plugins = { updater: { pubkey: brand.updaterPubkey, endpoints: [releaseUrls().feed] } }
 }
 
 if (args.includes("--corepack")) {

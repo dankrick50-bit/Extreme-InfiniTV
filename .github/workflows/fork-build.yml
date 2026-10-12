@@ -1,5 +1,11 @@
 # Builds installable apps for every platform from a fork, without the author's signing secrets.
-# Results are published to the fork's rolling "fork-latest" release.
+# Results are published to the fork's rolling "fork-latest" release, together with latest.json,
+# the file installed apps read to find out that a newer build exists.
+#
+# The fork's own keys, stored as repository secrets, make updates installable over an existing app:
+#   ANDROID_KEYSTORE_*           one signing key for every APK (Android refuses any other)
+#   TAURI_SIGNING_PRIVATE_KEY*   signs the Windows and AppImage installers for self-update
+# Without them the build still works; it just cannot be installed as an update.
 name: Fork build
 
 on:
@@ -74,11 +80,16 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
-      # Fork branding, and no updater artifacts (those need the author's private signing key).
+      # Fork branding, and updates pointed at the fork's own release instead of the author's.
       - name: Write build override
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
         run: node build-tools/make-build-config.mjs --out fork-override.json
 
       - name: Build
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: pnpm tauri build ${{ matrix.args }} --config fork-override.json
 
       - name: Collect installers
@@ -92,6 +103,10 @@ jobs:
           for f in src-tauri/target/release/bundle/appimage/*.AppImage; do cp "$f" "out/$NAME-linux-x86_64.AppImage"; done
           for f in src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.dmg; do cp "$f" "out/$NAME-macos-universal.dmg"; done
           for f in src-tauri/target/release/bundle/nsis/*-setup.exe; do cp "$f" "out/$NAME-windows-x64-setup.exe"; done
+          # Update signatures, present only when the signing key is. They cover the file's contents, so renaming is fine.
+          for f in src-tauri/target/release/bundle/deb/*.deb.sig; do cp "$f" "out/$NAME-ubuntu-amd64.deb.sig"; done
+          for f in src-tauri/target/release/bundle/appimage/*.AppImage.sig; do cp "$f" "out/$NAME-linux-x86_64.AppImage.sig"; done
+          for f in src-tauri/target/release/bundle/nsis/*-setup.exe.sig; do cp "$f" "out/$NAME-windows-x64-setup.exe.sig"; done
           ls -la out
           if [ -z "$(ls -A out)" ]; then
             echo "::error::The build finished but produced no installer"
@@ -192,7 +207,8 @@ jobs:
           fi
           NAME="$(node -p "require('./build-tools/brand.json').productName")"
           cp "$APK" "out/$NAME-android-fireos.apk"
-          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify "out/$NAME-android-fireos.apk"
+          # Prints which key signed it: an update only installs when this matches the installed app's.
+          "$ANDROID_HOME/build-tools/36.0.0/apksigner" verify --print-certs "out/$NAME-android-fireos.apk"
           ls -la out
 
       - uses: actions/upload-artifact@v4
@@ -225,6 +241,8 @@ jobs:
             echo "::error::No platform produced an installer"
             exit 1
           fi
+          # Folds the signatures into latest.json, which is what installed apps check for a newer build.
+          node build-tools/make-update-feed.mjs --dir out --repo "$GITHUB_REPOSITORY" --tag fork-latest
           ls -la out
           VERSION="$(node -p "require('./package.json').version")"
           gh release delete fork-latest --yes --cleanup-tag >/dev/null 2>&1 || true
@@ -232,4 +250,4 @@ jobs:
             --target "$GITHUB_SHA" \
             --prerelease \
             --title "Fork build $VERSION (${GITHUB_SHA::7})" \
-            --notes "Unsigned builds of this fork at commit $GITHUB_SHA. Windows: setup.exe. Ubuntu: .deb (or the portable .AppImage). macOS: .dmg. Android and Fire OS: .apk."
+            --notes "Builds of this fork at commit $GITHUB_SHA. Windows: setup.exe. Ubuntu: .deb (or the portable .AppImage). macOS: .dmg. Android and Fire OS: .apk. Installed apps find this build through latest.json."

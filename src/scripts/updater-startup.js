@@ -21,6 +21,7 @@ import { sandboxRuntime } from "@/scripts/lib/sandbox.ts"
 import { getUpdateChannel, getAutoUpdateEnabled } from "@/scripts/lib/app-settings.js"
 import { toast } from "@/scripts/lib/toast.js"
 import { t } from "@/scripts/lib/i18n.js"
+import { forkOwnsUpdates, runForkStartupUpdate } from "@/scripts/lib/fork-update"
 
 const SESSION_FLAG = "xt_updater_checked"
 const NOTIFIED_VERSION_KEY = "xt_update_notified"
@@ -127,4 +128,6 @@ async function maybeRunAutoUpdate() {
     }
 }
 
-maybeRunAutoUpdate()
+// This fork updates from its own builds; the path above would install the original app over it.
+if (forkOwnsUpdates()) runForkStartupUpdate()
+else maybeRunAutoUpdate()

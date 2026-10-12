@@ -16,6 +16,9 @@ mod external_player;
 mod firewall;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod fork_update;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod hevc_extension;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]

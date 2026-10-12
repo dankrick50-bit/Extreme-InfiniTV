@@ -2,5 +2,11 @@
   "productName": "KDENTApp",
   "binaryName": "kdentapp",
   "replaces": "Extreme InfiniTV",
-  "wordmark": ["KDENT", "App"]
+  "wordmark": [
+    "KDENT",
+    "App"
+  ],
+  "updateRepo": "dankrick50-bit/KDENTApp",
+  "updateTag": "fork-latest",
+  "updaterPubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEIzOUNGRjY2OUJENkE2NzQKUldSMHB0YWJaditjczlFOE91dGM3K3lKNlJwZk4rd1N1eWxqc0xiTHdnWFlMaEs3MGRVVlRrdVAK"
 }

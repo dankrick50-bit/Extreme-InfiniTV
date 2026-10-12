@@ -1070,13 +1070,12 @@ export function setCaptionsAutoEnabled(enabled) {
   )
 }
 
-// Off unless switched on: the upstream updater would replace this build with the original app.
 export function getAutoUpdateEnabled() {
-  return readLS(KEY_AUTO_UPDATE, "") === "1"
+  return readLS(KEY_AUTO_UPDATE, "") !== "0"
 }
 
 export function setAutoUpdateEnabled(enabled) {
-  writeLS(KEY_AUTO_UPDATE, enabled ? "1" : "0")
+  writeLS(KEY_AUTO_UPDATE, enabled ? "" : "0")
   document.dispatchEvent(
     new CustomEvent(AUTO_UPDATE_EVENT, { detail: { value: !!enabled } })
   )

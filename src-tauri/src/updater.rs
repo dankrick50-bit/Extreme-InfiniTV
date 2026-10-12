@@ -32,17 +32,28 @@ pub async fn updater_check_from(
     url: String,
 ) -> Result<Option<Value>, String> {
     let endpoint = tauri::Url::parse(&url).map_err(|e| format!("OTHER:{e}"))?;
-    let is_allowed = endpoint.scheme() == "https"
-        && endpoint.host_str() == Some(ALLOWED_HOST)
-        && endpoint.path().starts_with(ALLOWED_PATH_PREFIX);
+    // Set when the address is this fork's own feed; it carries the installed build's time.
+    let fork_build = crate::fork_update::feed_build(&endpoint);
+    let is_allowed = fork_build.is_some()
+        || (endpoint.scheme() == "https"
+            && endpoint.host_str() == Some(ALLOWED_HOST)
+            && endpoint.path().starts_with(ALLOWED_PATH_PREFIX));
     if !is_allowed {
         return Err(format!("OTHER:endpoint not allowed: {url}"));
     }
-    let update = app
+    let mut builder = app
         .updater_builder()
         .endpoints(vec![endpoint])
         .map_err(|e| format!("OTHER:{e}"))?
-        .timeout(CHECK_TIMEOUT)
+        .timeout(CHECK_TIMEOUT);
+    if let Some(installed_build) = fork_build {
+        // Fork builds share one version number, so newer is decided by build time, and only an
+        // installer signed with the fork's own key is accepted.
+        builder = builder.pubkey(crate::fork_update::PUBKEY).version_comparator(move |_current, published| {
+            crate::fork_update::is_newer(published.pub_date.map(|date| date.unix_timestamp()), installed_build)
+        });
+    }
+    let update = builder
         .build()
         .map_err(|e| format!("OTHER:{e}"))?
         .check()

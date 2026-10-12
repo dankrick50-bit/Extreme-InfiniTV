@@ -36,4 +36,5 @@
     <string name="receiver_wake_notification_channel">Cast wake</string>
     <string name="receiver_wake_notification_title">Casting to this TV</string>
     <string name="receiver_wake_notification_text">Tap to open and start playback</string>
+    <string name="kd_update_url_prefix" translatable="false">https://github.com/dankrick50-bit/KDENTApp/releases/download/</string>
 </resources>

@@ -5,6 +5,7 @@
 import { compareVersions } from "@/scripts/lib/version-compare.js"
 import { log } from "@/scripts/lib/log.js"
 import { getUpdateChannel, UPDATE_CHANNEL_EVENT } from "@/scripts/lib/app-settings.js"
+import { forkFeedUrl, forkOwnsUpdates, forkUpdateStatus } from "@/scripts/lib/fork-update"
 
 export const GITHUB_RELEASES_URL =
   "https://github.com/infinitel8p/Extreme-InfiniTV/releases"
@@ -105,6 +106,12 @@ export async function getCurrentAppVersion(): Promise<string | null> {
 }
 
 async function performCheck(): Promise<UpdateStatus | null> {
+  // This fork publishes its own builds; the original app's releases are not updates for it.
+  if (forkOwnsUpdates()) {
+    const status = await forkUpdateStatus()
+    if (status) lastStatus = status
+    return status
+  }
   const tokenAtStart = updateChannelToken
   try {
     const current = await getCurrentAppVersion()
@@ -165,6 +172,8 @@ export function getUpdateStatusSync(): UpdateStatus | null {
 // Beta channel has no static feed - the newest prerelease-or-stable tag wins,
 // so beta users converge back to stable once a stable release overtakes it.
 export async function resolveUpdateFeedUrl(): Promise<string> {
+  const forkFeed = forkFeedUrl()
+  if (forkFeed) return forkFeed
   if (getUpdateChannel() !== "beta") return STABLE_UPDATE_FEED_URL
 
   try {

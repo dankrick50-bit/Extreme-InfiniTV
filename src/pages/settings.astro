@@ -2447,6 +2447,7 @@ const navStructure: NavSection[] = [
       isTransientUpdaterError,
       MS_STORE_UPDATES_URL,
     } from "@/scripts/lib/update-check.js"
+    import { forkOwnsUpdates, forkReleasePage, installForkUpdateInApp } from "@/scripts/lib/fork-update"
     import { sandboxRuntimeSync } from "@/scripts/lib/sandbox.ts"
     import {
       getCompositingState,
@@ -4613,7 +4614,8 @@ const navStructure: NavSection[] = [
       // Linux falls back to the GitHub check below if `check()` throws (non-AppImage installs).
       canUseTauriUpdater = (isWindowsDesktop && !storeBuild) || (isLinuxDesktop && !sandboxed)
 
-      if (noInAppUpdate) updateChannelRowEl?.setAttribute("hidden", "")
+      // The fork has one stream of builds, so there is no stable/beta choice to offer.
+      if (noInAppUpdate || forkOwnsUpdates()) updateChannelRowEl?.setAttribute("hidden", "")
       if (!canUseTauriUpdater) autoUpdateRowEl?.setAttribute("hidden", "")
 
       if (!canUseTauriUpdater) {
@@ -4737,8 +4739,14 @@ const navStructure: NavSection[] = [
     }
 
     async function checkViaTauriUpdater() {
-      if (getUpdateChannel() === "beta") {
+      // This fork's builds go through the same per-call route as the beta channel, against its own feed.
+      if (getUpdateChannel() === "beta" || forkOwnsUpdates()) {
         await checkViaBetaInvoke()
+        if (forkOwnsUpdates()) {
+          if (updateGithubLink) updateGithubLink.href = forkReleasePage() || updateGithubLink.href
+          // Fork builds share one version number; when it was built is what tells them apart.
+          if (updateLatestEl && pendingUpdate?.pubDate) updateLatestEl.textContent = new Date(pendingUpdate.pubDate).toLocaleString()
+        }
         return
       }
       updateInstallMode = "plugin"
@@ -4963,6 +4971,8 @@ const navStructure: NavSection[] = [
     updateInstallBtn?.addEventListener("click", installUpdate)
     updateRelaunchBtn?.addEventListener("click", relaunchApp)
     updateGetBtn?.addEventListener("click", () => {
+      // Android builds of the fork download and install in the app; everything else opens the link.
+      if (forkOwnsUpdates() && installForkUpdateInApp(updateGetTarget)) return
       openExternal(updateGetTarget)
     })
     updateChannelSelectEl?.addEventListener("change", () => {

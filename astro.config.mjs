@@ -3,6 +3,7 @@ import { defineConfig } from "astro/config"
 import tailwindcss from "@tailwindcss/vite"
 import { optimizeTablerIconsImport } from "./src/plugins/vite-plugin-optimize-tabler-icons.ts"
 import { brandPlugin } from "./build-tools/vite-plugin-brand.mjs"
+import { buildInfo } from "./build-tools/build-info.mjs"
 import svelte from "@astrojs/svelte"
 
 const hmrHost = process.env.XTREAM_HMR_HOST
@@ -10,6 +11,8 @@ const hmrHost = process.env.XTREAM_HMR_HOST
 export default defineConfig({
   vite: {
     plugins: [tailwindcss(), optimizeTablerIconsImport(), brandPlugin()],
+    // Which build of the fork this is, so the app can tell when a newer one has been published.
+    define: { __KD_BUILD__: JSON.stringify(buildInfo()) },
     server: {
       host: "0.0.0.0",
       port: 4321,
