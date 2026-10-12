@@ -1,4 +1,8 @@
 // ffmpeg live audio-transcode proxy (desktop only): copies video, transcodes audio to AAC.
+//
+// Surround survives the transcode: `aformat=channel_layouts=5.1|stereo|mono` lets ffmpeg keep the
+// source's own layout (5.1 stays 5.1, stereo stays stereo; anything wider is brought down to 5.1,
+// the most the WebView's AAC decoder is given here) instead of folding everything to stereo.
 
 use std::collections::{HashMap, VecDeque};
 use std::process::Stdio;
@@ -354,11 +358,9 @@ fn build_ffmpeg_args() -> Vec<String> {
         "-c:a",
         "aac",
         "-af",
-        "aresample=async=1:first_pts=0",
-        "-ac",
-        "2",
+        "aresample=async=1:first_pts=0,aformat=channel_layouts=5.1|stereo|mono",
         "-b:a",
-        "192k",
+        "384k",
         "-muxdelay",
         "0",
         "-muxpreload",
@@ -1161,11 +1163,9 @@ mod tests {
                 "-c:a",
                 "aac",
                 "-af",
-                "aresample=async=1:first_pts=0",
-                "-ac",
-                "2",
+                "aresample=async=1:first_pts=0,aformat=channel_layouts=5.1|stereo|mono",
                 "-b:a",
-                "192k",
+                "384k",
                 "-muxdelay",
                 "0",
                 "-muxpreload",

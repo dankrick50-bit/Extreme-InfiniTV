@@ -6,6 +6,7 @@ import { attachDialogSpatialNav } from "@/scripts/lib/dialog-spatial-nav.js"
 import { t } from "@/scripts/lib/i18n.js"
 import { ICON_ASPECT_RATIO } from "@/scripts/lib/icons.ts"
 import { VIDEO_SCALE_MODES, type VideoScaleMode } from "@/scripts/lib/video-scale.ts"
+import { mountEnhanceEntry } from "@/scripts/lib/enhance-dialog"
 
 const DIALOG_ID = "xt-video-scale-dialog"
 
@@ -111,6 +112,7 @@ function ensureDialog(): HTMLDialogElement {
     </div>
   `
   document.body.appendChild(node)
+  mountEnhanceEntry(node)
   attachDialogSpatialNav(node, {
     defaultElement: `#${DIALOG_ID} [data-role="mode-btn"][aria-checked="true"]`,
   })

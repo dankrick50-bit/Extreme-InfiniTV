@@ -421,16 +421,15 @@ fn build_ffmpeg_args(input_url: &str, audio_stream_index: u32, start_seconds: f6
     args.push("-c:v".to_string());
     args.push("copy".to_string());
     if transcode_audio {
+        // Keeps the track's own layout up to 5.1 rather than folding it to stereo (see audio_proxy.rs).
         args.extend(
             [
                 "-c:a",
                 "aac",
                 "-af",
-                "aresample=async=1",
-                "-ac",
-                "2",
+                "aresample=async=1,aformat=channel_layouts=5.1|stereo|mono",
                 "-b:a",
-                "192k",
+                "384k",
             ]
             .into_iter()
             .map(str::to_string),
@@ -1524,11 +1523,9 @@ mod tests {
                 "-c:a",
                 "aac",
                 "-af",
-                "aresample=async=1",
-                "-ac",
-                "2",
+                "aresample=async=1,aformat=channel_layouts=5.1|stereo|mono",
                 "-b:a",
-                "192k",
+                "384k",
                 "-muxdelay",
                 "0",
                 "-muxpreload",

@@ -3,10 +3,14 @@
 import { getMonoAudioEnabled, MONO_AUDIO_EVENT } from "@/scripts/lib/app-settings.js"
 import { log } from "@/scripts/lib/log.js"
 import { getSharedAudioContext } from "@/scripts/lib/audio-context.ts"
+import { audioEnhanceWanted, ENHANCE_EVENT } from "@/scripts/lib/enhance-settings"
+import { connectEnhanceChain, type EnhanceChain } from "@/scripts/lib/audio-enhance"
 
 interface MonoGraph {
   source: MediaElementAudioSourceNode
   gain: GainNode
+  // Volume levelling and dialogue boost sit in the same graph: an element can only ever have one source node.
+  enhance: EnhanceChain
 }
 
 const graphs = new WeakMap<HTMLVideoElement, MonoGraph>()
@@ -69,10 +73,11 @@ export function applyMonoPreference(videoEl: HTMLVideoElement | null): void {
     const existing = graphs.get(videoEl)
     if (existing) {
       setMonoConfig(existing.gain, monoEnabled)
+      existing.enhance.update()
       if (monoEnabled) noteMonoSourceChange(videoEl, videoEl.currentSrc)
       return
     }
-    if (!monoEnabled) return
+    if (!monoEnabled && !audioEnhanceWanted()) return
     if (!isSafeAudioSource(videoEl)) {
       noteMonoSourceChange(videoEl, videoEl.currentSrc)
       return
@@ -82,10 +87,10 @@ export function applyMonoPreference(videoEl: HTMLVideoElement | null): void {
     if (ctx.state === "suspended") void ctx.resume().catch(() => {})
     const source = ctx.createMediaElementSource(videoEl)
     const gain = ctx.createGain()
-    source.connect(gain)
+    const enhance = connectEnhanceChain(ctx, source, gain)
     gain.connect(ctx.destination)
-    graphs.set(videoEl, { source, gain })
-    setMonoConfig(gain, true)
+    graphs.set(videoEl, { source, gain, enhance })
+    setMonoConfig(gain, monoEnabled)
   } catch (err) {
     log.warn("[xt:audio-effects] failed to apply mono preference", err)
   }
@@ -111,6 +116,7 @@ function ensureSettingListener(): void {
   if (settingListenerRegistered) return
   settingListenerRegistered = true
   document.addEventListener(MONO_AUDIO_EVENT, applyToCurrentHandle)
+  document.addEventListener(ENHANCE_EVENT, applyToCurrentHandle)
 }
 
 export function bindMonoAudio(handle: MonoAudioHandle): () => void {

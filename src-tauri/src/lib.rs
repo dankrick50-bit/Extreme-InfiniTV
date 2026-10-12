@@ -19,6 +19,9 @@ mod firewall;
 mod fork_update;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod graphics_pref;
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod hevc_extension;
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
@@ -212,6 +215,8 @@ pub fn run() {
     // setup(), so the WebKitGTK env var has to land before that.
     #[cfg(not(any(target_os = "android", target_os = "ios")))]
     compositing::initialize(&context.config().identifier);
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    graphics_pref::initialize(&context.config().identifier);
 
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
@@ -263,6 +268,8 @@ pub fn run() {
             external_player::sandbox_runtime,
             external_player::discover_external_players,
             firewall::receiver_firewall_status,
+            graphics_pref::graphics_pref_get,
+            graphics_pref::graphics_pref_set,
             firewall::receiver_firewall_allow,
             hevc_extension::install_appx_package,
             hevc_extension::is_store_build,

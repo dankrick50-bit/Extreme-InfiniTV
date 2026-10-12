@@ -32,6 +32,7 @@ import {
   EXTERNAL_PLAYER_BACKENDS,
 } from "@/scripts/lib/app-settings.js"
 import { bindMonoAudio, noteMonoSourceChange } from "@/scripts/lib/audio-effects.js"
+import { bindPictureEnhance } from "@/scripts/lib/video-sharpen"
 import { sandboxRuntimeSync } from "@/scripts/lib/sandbox.ts"
 import {
   createPlaybackTelemetry,
@@ -2986,6 +2987,7 @@ async function mountShaka(videoEl: HTMLVideoElement, options: MountOptions = {})
 
 // Runs the mono-graph disposer on player teardown so its nodes disconnect.
 function wireMonoAudioDisposal(handle: VjsLikeHandle): void {
+  bindPictureEnhance(handle)
   const disposeMonoAudio = bindMonoAudio(handle)
   const originalDispose = handle.dispose?.bind(handle)
   handle.dispose = () => {

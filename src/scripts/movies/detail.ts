@@ -106,6 +106,7 @@ import { setupExternalPlayerButton, surfaceLaunchErrorFallback } from "@/scripts
 import { setupPlayOnTvButton } from "@/scripts/lib/play-on-tv-button.ts"
 import { createVideoScaleController } from "@/scripts/lib/video-scale.ts"
 import { openVideoScaleDialog, videoScaleModeLabelKey } from "@/scripts/lib/video-scale-dialog.ts"
+import { mediaBadges } from "@/scripts/lib/media-badges"
 import { createSubtitleDelayController } from "@/scripts/lib/subtitle-delay-dialog.ts"
 import { attachPlayerInsights } from "@/scripts/lib/player-stats.ts"
 import { createVodPlaybackToasts } from "@/scripts/lib/vod-playback-toasts.ts"
@@ -162,6 +163,8 @@ let metaYearText = ""
 let metaDurationText = ""
 let metaGenreText = ""
 let metaRatingText = ""
+// What the provider says the file carries ("4K HEVC", "Dolby Digital+ 5.1"); empty when it does not say.
+let metaTechBadges = []
 let externalPresenceActive = false
 let enrichRequestId = 0
 let vodCatalogPromise = null
@@ -311,6 +314,7 @@ function applyVodInfo(data) {
   metaDurationText = fmtDuration(duration)
   metaGenreText = genre || ""
   metaRatingText = fmtImdbRating(rating)
+  metaTechBadges = mediaBadges(info)
   renderMetaLine()
   if (activePlaylistId) noteDetailGenres(activePlaylistId, "vod", movieId, genre)
   providerPlotApplied = Boolean(plot.trim())
@@ -370,6 +374,7 @@ function renderMetaLine() {
         "</span>"
     )
   }
+  for (const badge of metaTechBadges) bits.push(`<span class="meta-item">${escapeDetailText(badge)}</span>`)
   metaEl.innerHTML = bits.join("")
   renderFactsColumn()
 }
