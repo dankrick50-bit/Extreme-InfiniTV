@@ -375,9 +375,10 @@ describe("the published feed (build-tools/make-update-feed.mjs)", () => {
       build: { stamp: 2000, commit: "bbbbbbb" },
       urls,
     })
-    expect(feed.kd.assets["android-arm64"]).toBe(`${DOWNLOAD}/App-fire-hd10-2023.apk`)
-    expect(feed.kd.assets["android-armv7"]).toBe(`${DOWNLOAD}/App-fire-tv-stick-4k.apk`)
-    expect(feed.kd.assets.android).toBe(`${DOWNLOAD}/App-android-fireos.apk`)
+    const assets = feed.kd.assets as Record<string, string>
+    expect(assets["android-arm64"]).toBe(`${DOWNLOAD}/App-fire-hd10-2023.apk`)
+    expect(assets["android-armv7"]).toBe(`${DOWNLOAD}/App-fire-tv-stick-4k.apk`)
+    expect(assets.android).toBe(`${DOWNLOAD}/App-android-fireos.apk`)
   })
 
   it("is read back by the app as the same build", () => {
