@@ -1,0 +1,11 @@
+# Cross-platform ACL for the cast bridge (Chromecast and DLNA TVs), granted from default.json.
+
+[[permission]]
+identifier = "allow-cast-bridge-commands"
+description = "Local-origin access to finding and saving Chromecast and DLNA TVs."
+commands.allow = [
+    "cast_bridge_discover",
+    "cast_bridge_add",
+    "cast_bridge_add_manual",
+    "cast_bridge_sync",
+]

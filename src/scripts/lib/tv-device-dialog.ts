@@ -16,6 +16,7 @@ import {
   type TvDevice,
 } from "@/scripts/lib/tv-cast.js"
 import { discoverReceivers, type DiscoveredReceiver } from "@/scripts/lib/receiver-discovery.js"
+import { bridgedAddressLabel, isBridgedDeviceId } from "@/scripts/lib/cast-bridge"
 
 const DIALOG_ID = "tv-device-picker"
 const DEFAULT_RECEIVER_PORT = 47815
@@ -63,7 +64,8 @@ export function openTvDevicePicker(
     const addMode = options.mode === "add"
     const devices = [...listTvDevices()]
     const showAddFormByDefault = addMode || devices.length === 0
-    const knownHosts = devices.flatMap(deviceKnownHostEntries)
+    // Chromecasts and smart TVs are reached through this device, so there is no receiver to look for at their address.
+    const knownHosts = devices.filter((device) => !isBridgedDeviceId(device.id)).flatMap(deviceKnownHostEntries)
 
     const subtitleHtml = options.contentTitle
       ? `<div data-role="subtitle" class="text-sm text-fg-3 line-clamp-2"></div>`
@@ -86,7 +88,10 @@ export function openTvDevicePicker(
         </div>
         <p data-role="empty-hint" class="hidden shrink-0 px-3 text-sm text-fg-3"></p>
         <div data-role="add-section" class="flex flex-col gap-3 shrink-0 px-3">
-          <button type="button" data-role="toggle-add" class="btn self-end"></button>
+          <div class="flex flex-wrap justify-end gap-2">
+            <button type="button" data-role="external-tv" class="btn"></button>
+            <button type="button" data-role="toggle-add" class="btn"></button>
+          </div>
           <form data-role="add-form" class="flex flex-col gap-3">
             <div class="flex flex-col gap-1">
               <label for="${DIALOG_ID}-host" data-role="host-label" class="text-xs font-medium text-fg-2"></label>
@@ -131,6 +136,10 @@ export function openTvDevicePicker(
     const toggleAddBtn = dialog.querySelector<HTMLButtonElement>('[data-role="toggle-add"]')!
     toggleAddBtn.textContent = t("cast.picker.addTv")
     toggleAddBtn.classList.toggle("hidden", showAddFormByDefault)
+
+    const externalTvBtn = dialog.querySelector<HTMLButtonElement>('[data-role="external-tv"]')!
+    externalTvBtn.textContent = "Chromecast or smart TV"
+    externalTvBtn.classList.toggle("hidden", !isTauri)
 
     const addForm = dialog.querySelector<HTMLFormElement>('[data-role="add-form"]')!
     addForm.classList.toggle("hidden", !showAddFormByDefault)
@@ -201,7 +210,7 @@ export function openTvDevicePicker(
 
       const hostPortEl = document.createElement("span")
       hostPortEl.className = "tabular-nums truncate"
-      hostPortEl.textContent = `${device.host}:${device.port}`
+      hostPortEl.textContent = bridgedAddressLabel(device) ?? `${device.host}:${device.port}`
       appendHostsHint(hostPortEl, device.hosts)
       metaRow.appendChild(hostPortEl)
 
@@ -513,6 +522,14 @@ export function openTvDevicePicker(
     }
     toggleAddBtn.addEventListener("click", onToggleAdd)
 
+    // A TV added there is chosen straight away, so "Play on TV" carries on to it without a second pick.
+    const onExternalTv = async () => {
+      const { openExternalTvDialog } = await import("@/scripts/lib/cast-bridge-dialog")
+      const device = await openExternalTvDialog()
+      if (device) settle(device)
+    }
+    externalTvBtn.addEventListener("click", onExternalTv)
+
     const onFormSubmit = async (event: Event) => {
       event.preventDefault()
       clearFieldErrors()
@@ -594,6 +611,7 @@ export function openTvDevicePicker(
       rescanBtn.removeEventListener("click", onRescanClick)
       listEl.removeEventListener("click", onListClick)
       toggleAddBtn.removeEventListener("click", onToggleAdd)
+      externalTvBtn.removeEventListener("click", onExternalTv)
       addForm.removeEventListener("submit", onFormSubmit)
       dialogEl.removeEventListener("click", onClick)
       dialogEl.removeEventListener("cancel", onCancel)

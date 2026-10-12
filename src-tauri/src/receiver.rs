@@ -1053,6 +1053,7 @@ fn discovery_identity_key(name: &str, port: u16, id: Option<&str>) -> String {
 }
 
 #[cfg(not(target_os = "ios"))]
+#[derive(Clone)]
 struct ResolvedEvent {
     name: String,
     port: u16,
@@ -1395,11 +1396,40 @@ async fn sweep_subnets_rate_limited(interfaces: &[if_addrs::Interface], force_sw
 }
 
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
+const DISCOVER_PROGRESS_EVENT: &str = "xt:receiver-discover-progress";
+
+/// Tells the picker about receivers as they answer, so it need not wait out the whole scan window.
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+fn emit_discover_progress(app: Option<&AppHandle>, events: &[ResolvedEvent], interfaces: &[if_addrs::Interface]) {
+    let Some(app) = app else {
+        return;
+    };
+    // Address-less partials are normal mid-scan; merging them here would only repeat their log line.
+    let usable: Vec<ResolvedEvent> =
+        events.iter().filter(|event| event.addresses.iter().any(is_usable_mdns_addr)).cloned().collect();
+    let discovered = merge_resolved_events(usable, interfaces);
+    if !discovered.is_empty() {
+        let _ = app.emit(DISCOVER_PROGRESS_EVENT, discovered);
+    }
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
 #[tauri::command]
 pub async fn receiver_discover(
+    app: AppHandle,
     timeout_ms: Option<u64>,
     known_hosts: Option<Vec<String>>,
     force_sweep: Option<bool>,
+) -> Result<Vec<DiscoveredReceiver>, String> {
+    discover_receivers(timeout_ms, known_hosts, force_sweep, Some(&app)).await
+}
+
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+async fn discover_receivers(
+    timeout_ms: Option<u64>,
+    known_hosts: Option<Vec<String>>,
+    force_sweep: Option<bool>,
+    progress: Option<&AppHandle>,
 ) -> Result<Vec<DiscoveredReceiver>, String> {
     let clamped_timeout = timeout_ms
         .unwrap_or(DISCOVER_DEFAULT_TIMEOUT_MS)
@@ -1408,8 +1438,15 @@ pub async fn receiver_discover(
 
     log::info!("[receiver] discover browsing {MDNS_SERVICE_TYPE}, timeout={clamped_timeout}ms");
 
+    let interfaces = if_addrs::get_if_addrs().unwrap_or_default();
     let known_host_entries = parse_known_hosts(&known_hosts.unwrap_or_default());
-    let known_host_probe = tauri::async_runtime::spawn(probe_known_hosts(known_host_entries));
+    let probe_progress = progress.cloned();
+    let probe_interfaces = interfaces.clone();
+    let known_host_probe = tauri::async_runtime::spawn(async move {
+        let events = probe_known_hosts(known_host_entries).await;
+        emit_discover_progress(probe_progress.as_ref(), &events, &probe_interfaces);
+        events
+    });
 
     let daemon = mdns_sd::ServiceDaemon::new().map_err(|error| format!("OTHER:mdns daemon start failed: {error}"))?;
     let events = daemon
@@ -1447,6 +1484,7 @@ pub async fn receiver_discover(
             join_ips(&dedupe_ips(&event.addresses))
         );
         resolved_events.push(event);
+        emit_discover_progress(progress, &resolved_events, &interfaces);
     }
 
     let _ = daemon.stop_browse(MDNS_SERVICE_TYPE);
@@ -1458,7 +1496,6 @@ pub async fn receiver_discover(
     }
     resolved_events.extend(known_host_events);
 
-    let interfaces = if_addrs::get_if_addrs().unwrap_or_default();
     let mut discovered = merge_resolved_events(resolved_events, &interfaces);
     for entry in &discovered {
         log::info!(
@@ -3128,7 +3165,7 @@ mod tests {
         let fullname = service_info.get_fullname().to_string();
         daemon.register(service_info).expect("mdns register must succeed");
 
-        let discovered = receiver_discover(Some(4000), None, None).await.expect("discover must succeed");
+        let discovered = discover_receivers(Some(4000), None, None, None).await.expect("discover must succeed");
 
         let _ = daemon.unregister(&fullname);
         let _ = daemon.shutdown();

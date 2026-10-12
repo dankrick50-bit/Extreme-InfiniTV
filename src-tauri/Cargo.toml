@@ -41,6 +41,8 @@ axum = { version = "0.8", features = ["ws"] }
 hyper = { version = "1", features = ["server", "http1"] }
 hyper-util = { version = "0.1", features = ["tokio", "service"] }
 tokio = { version = "1", features = ["net", "sync", "time", "macros", "fs", "io-util"] }
+# The TLS stack reqwest already builds (ring, no aws-lc); used for the Chromecast link.
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "tls12"] }
 
 [target.'cfg(not(any(target_os = "android", target_os = "ios")))'.dependencies]
 tauri-plugin-updater = "2"

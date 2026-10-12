@@ -863,6 +863,8 @@ const appMode = import.meta.env.PUBLIC_APP_MODE || ""
   import { initConnectivity } from "@/scripts/lib/connectivity.js"
   import { initTrayHandler } from "@/scripts/lib/tray-handler"
   import { initTvCastPill } from "@/scripts/lib/tv-cast-pill"
+  import { initCastBridge } from "@/scripts/lib/cast-bridge"
+  import { initCastDownloadGuard } from "@/scripts/lib/cast-download-guard"
   import { initWhatsNew } from "@/scripts/lib/whats-new"
   import { mountCompositingTrialPrompt } from "@/scripts/lib/compositing"
   import { initUiSounds } from "@/scripts/lib/ui-sounds"
@@ -998,7 +1000,11 @@ const appMode = import.meta.env.PUBLIC_APP_MODE || ""
   initFocusGlide()
   initKeyboardHelp()
   initTrayHandler()
+  // Before the pill: it may look for a cast still running on a Chromecast or smart TV.
+  initCastBridge()
   initTvCastPill()
+  // A TV that is playing holds the provider connection; downloads wait for it like they do for local playback.
+  initCastDownloadGuard()
   initWhatsNew()
   mountCompositingTrialPrompt()
 

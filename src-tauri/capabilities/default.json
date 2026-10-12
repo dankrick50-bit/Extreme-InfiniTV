@@ -66,6 +66,7 @@
     },
     "allow-warmup-commands",
     "allow-download-commands",
+    "allow-cast-bridge-commands",
     "allow-safe-fetch-commands",
     "allow-receiver-commands"
   ]

@@ -24,6 +24,7 @@ let statusHandler = null
 let connectPromise = null
 let statusFile = null
 let nativePlayerOpen = false
+let castStreaming = false
 let lastLimit = -1
 
 async function invoke(command, args) {
@@ -58,7 +59,7 @@ export function isStreamOpen(video) {
 }
 
 function anyStreamOpen() {
-  if (nativePlayerOpen) return true
+  if (nativePlayerOpen || castStreaming) return true
   if (typeof document === "undefined") return false
   for (const video of document.querySelectorAll("video")) {
     if (isStreamOpen(video)) return true
@@ -99,6 +100,16 @@ function watchForStreamClose(streamOpen) {
 /** Android's native player runs outside the page, so its launcher reports it here. */
 export function noteNativePlayerOpen(open) {
   nativePlayerOpen = !!open
+  syncDownloadLimit()
+}
+
+/**
+ * Something playing on a TV holds a provider connection just as local playback does, though no
+ * video element here shows it; cast-download-guard.ts follows the TV and reports it here.
+ */
+export function noteCastStreaming(streaming) {
+  if (castStreaming === !!streaming) return
+  castStreaming = !!streaming
   syncDownloadLimit()
 }
 

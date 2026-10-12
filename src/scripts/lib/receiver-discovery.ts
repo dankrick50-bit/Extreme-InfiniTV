@@ -75,6 +75,9 @@ function identityKey(receiver: DiscoveredReceiver): string {
   return receiver.id ? `id:${receiver.id}` : `${receiver.host}:${receiver.port}`
 }
 
+/** Desktop only: Rust reports receivers as they answer, ahead of the scan's final list. */
+const DISCOVER_PROGRESS_EVENT = "xt:receiver-discover-progress"
+
 /** How long to give NSD a head start before racing it against the Rust subnet sweep. */
 const SWEEP_GRACE_PERIOD_MS = 1200
 
@@ -189,25 +192,45 @@ export function discoverReceivers(
 
   if (isTauriRuntime()) {
     log.info(`[xt:receiver-discovery] scanning via tauri, timeout=${timeoutMs}ms`)
+    let stopProgress = () => {}
     void (async () => {
       try {
-        const { invoke } = await import("@tauri-apps/api/core")
+        const [{ invoke }, { listen }] = await Promise.all([
+          import("@tauri-apps/api/core"),
+          import("@tauri-apps/api/event"),
+        ])
+        // The scan runs its full window before returning; progress shows each TV the moment it answers.
+        const found = new Map<string, DiscoveredReceiver>()
+        stopProgress = await listen<DiscoveredReceiver[]>(DISCOVER_PROGRESS_EVENT, (event) => {
+          if (cancelled || !Array.isArray(event.payload)) return
+          for (const receiver of event.payload.filter(isDiscoveredReceiver).map(normalizeDiscovered)) {
+            found.set(identityKey(receiver), receiver)
+          }
+          onFound([...found.values()])
+        })
+        if (cancelled) {
+          stopProgress()
+          return
+        }
         const result = await invoke<DiscoveredReceiver[]>("receiver_discover", {
           timeoutMs,
           knownHosts: options.knownHosts,
           forceSweep: options.force,
         })
+        stopProgress()
         if (cancelled) return
         onFound(result)
         log.info(`[xt:receiver-discovery] scan complete, found=${result.length}`)
         onDone?.(null)
       } catch (err) {
+        stopProgress()
         log.warn("[xt:receiver-discovery] receiver_discover failed:", err)
         if (!cancelled) onDone?.(String(err))
       }
     })()
     return () => {
       cancelled = true
+      stopProgress()
     }
   }
 

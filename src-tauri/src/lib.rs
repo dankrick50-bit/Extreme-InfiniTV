@@ -1,6 +1,8 @@
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod audio_proxy;
 
+mod cast_bridge;
+
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod compositing;
 
@@ -218,6 +220,7 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .manage(warmup::WarmupState::default())
         .manage(downloader::DownloaderState::default())
+        .manage(cast_bridge::BridgeState::default())
         .manage(receiver::ReceiverState::default());
 
     #[cfg(not(target_os = "ios"))]
@@ -290,6 +293,10 @@ pub fn run() {
             downloader::download_status,
             downloader::download_ack,
             downloader::download_set_limit,
+            cast_bridge::cast_bridge_discover,
+            cast_bridge::cast_bridge_add,
+            cast_bridge::cast_bridge_add_manual,
+            cast_bridge::cast_bridge_sync,
             warmup::warmup_start,
             warmup::warmup_status,
             warmup::warmup_cancel,
@@ -318,6 +325,10 @@ pub fn run() {
         downloader::download_status,
         downloader::download_ack,
         downloader::download_set_limit,
+        cast_bridge::cast_bridge_discover,
+        cast_bridge::cast_bridge_add,
+        cast_bridge::cast_bridge_add_manual,
+        cast_bridge::cast_bridge_sync,
         warmup::warmup_start,
         warmup::warmup_status,
         warmup::warmup_cancel,
@@ -353,6 +364,8 @@ pub fn run() {
             }
             // Synchronous: runs before any IPC, so it can't race a warmup_start's staging_dir.
             warmup::sweep_stale_staging(app.handle());
+            // Before any page loads, so a saved Chromecast or smart TV is reachable from the first script.
+            cast_bridge::init(app.handle());
             Ok(())
         })
         .build(context)

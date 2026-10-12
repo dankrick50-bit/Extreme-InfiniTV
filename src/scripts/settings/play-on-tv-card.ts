@@ -16,6 +16,7 @@ import {
   type TvDevice,
 } from "@/scripts/lib/tv-cast.js"
 import { openTvDevicePicker } from "@/scripts/lib/tv-device-dialog.js"
+import { bridgedAddressLabel } from "@/scripts/lib/cast-bridge"
 
 const HOLLOW_DOT_CLASS = "size-1.5 rounded-full border border-fg-3"
 
@@ -123,7 +124,7 @@ function init(): void {
 
     const hostPortEl = document.createElement("span")
     hostPortEl.className = "tabular-nums whitespace-nowrap"
-    hostPortEl.textContent = `${device.host}:${device.port}`
+    hostPortEl.textContent = bridgedAddressLabel(device) ?? `${device.host}:${device.port}`
     metaRow.appendChild(hostPortEl)
 
     const lastUsedAge = fmtAge(device.lastSeenAt)
