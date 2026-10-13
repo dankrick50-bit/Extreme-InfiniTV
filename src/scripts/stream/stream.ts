@@ -84,6 +84,7 @@ import { applyStreamHeaders } from "@/scripts/lib/stream-headers.ts"
 import { renderProviderError } from "@/scripts/lib/provider-error.js"
 import { toast, toastError } from "@/scripts/lib/toast.js"
 import { LIVE_RECONNECT_DELAY_MS } from "@/scripts/lib/live-reconnect"
+import { setChannelStepper, setPlayerTitle } from "@/scripts/lib/player-chrome"
 import { requestLogoFallback } from "@/scripts/lib/logo-fallback.ts"
 import { mountCachedImage } from "@/scripts/lib/img-cache.ts"
 import {
@@ -1221,6 +1222,9 @@ function tuneRelativeChannel(e, delta, reason) {
   focusByIdx(nextIdx)
   play(channel.id, channel.name, reason)
 }
+
+// The player's on-screen channel down / up buttons step the same way the [ and ] keys do.
+setChannelStepper((delta) => tuneRelativeChannel({ preventDefault() {} }, delta, "user"))
 
 document.addEventListener("keydown", (e) => {
   // AltGr reports as Ctrl+Alt on Windows; `\` needs AltGr on many layouts (e.g. German AltGr+ß).
@@ -3946,6 +3950,7 @@ function releaseLocalPlaybackForHandoff() {
 async function play(streamId, name, reason = "user") {
   // Every tune's trigger reaches the log file, so sessions reconstruct from it.
   log.info("[xt:livetv] tune", { streamId, name: name || null, reason })
+  setPlayerTitle(name || "")
   if (reason === "user") {
     freezeRetuneCounts.delete(streamId)
     nativeRelatchAttempts.delete(streamId)

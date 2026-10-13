@@ -1,0 +1,510 @@
+/* The look of the built-in player on the main screens. Everything is scoped to .kd-player,
+   which player-chrome.ts adds to the player it dresses, so other players are untouched. */
+
+.kd-player {
+    --kd-chip: rgb(255 255 255 / 0.14);
+    --kd-chip-strong: rgb(255 255 255 / 0.24);
+    --kd-glass: rgb(8 8 12 / 0.46);
+    --kd-ease: cubic-bezier(0.2, 0.7, 0.2, 1);
+    --kd-toggle-size: 64px;
+    --kd-skip-size: 48px;
+    --kd-transport-gap: 28px;
+}
+
+.kd-player[data-kd-wide] {
+    --kd-toggle-size: 76px;
+    --kd-skip-size: 54px;
+    --kd-transport-gap: 40px;
+}
+
+.kd-player[data-kd-large] {
+    --kd-toggle-size: 92px;
+    --kd-skip-size: 64px;
+    --kd-transport-gap: 56px;
+}
+
+/* ───────────── Centre play / pause and skips ───────────── */
+
+.kd-transport {
+    position: absolute;
+    inset: 0;
+    z-index: 25;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--kd-transport-gap);
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.22s var(--kd-ease);
+}
+
+.kd-transport-button {
+    display: grid;
+    place-items: center;
+    width: var(--kd-skip-size);
+    height: var(--kd-skip-size);
+    padding: 0;
+    border: 1px solid rgb(255 255 255 / 0.16);
+    border-radius: 999px;
+    background: var(--kd-glass);
+    color: #fff;
+    cursor: pointer;
+    pointer-events: none;
+    backdrop-filter: blur(14px) saturate(1.3);
+    -webkit-backdrop-filter: blur(14px) saturate(1.3);
+    box-shadow: 0 6px 24px rgb(0 0 0 / 0.28);
+    transition:
+        transform 0.16s var(--kd-ease),
+        background-color 0.16s var(--kd-ease),
+        border-color 0.16s var(--kd-ease);
+}
+
+/* The players paint every icon inside them solid white; ours are line drawings. */
+.kd-player .kd-transport-button svg {
+    width: 54%;
+    height: 54%;
+    fill: none;
+    stroke: currentColor;
+}
+
+.kd-player .kd-transport-button svg text,
+.kd-player .kd-transport-button svg path[fill="currentColor"] {
+    fill: currentColor;
+    stroke: none;
+}
+
+.kd-toggle {
+    width: var(--kd-toggle-size);
+    height: var(--kd-toggle-size);
+}
+
+.kd-player .kd-toggle svg {
+    width: 46%;
+    height: 46%;
+    fill: currentColor;
+    stroke: none;
+}
+
+.kd-pulse {
+    animation: kd-pulse 0.5s var(--kd-ease);
+}
+
+@keyframes kd-pulse {
+    0% {
+        box-shadow: 0 0 0 0 rgb(255 255 255 / 0.5), 0 6px 24px rgb(0 0 0 / 0.28);
+    }
+    100% {
+        box-shadow: 0 0 0 18px rgb(255 255 255 / 0), 0 6px 24px rgb(0 0 0 / 0.28);
+    }
+}
+
+.kd-transport-button:hover {
+    transform: scale(1.07);
+    background: rgb(30 30 36 / 0.72);
+    border-color: rgb(255 255 255 / 0.34);
+}
+
+.kd-transport-button:active {
+    transform: scale(0.94);
+}
+
+.kd-transport-button:focus-visible {
+    outline: 2px solid #fff;
+    outline-offset: 3px;
+}
+
+/* A live channel has nothing to skip through; on Live TV it gets channel down / up instead. */
+.kd-player:not([data-kd-seekable]) .kd-skip,
+.kd-player:not([data-kd-channels]) .kd-channel {
+    display: none;
+}
+
+/* ───────────── Title, when the player fills the screen ───────────── */
+
+.kd-topbar {
+    position: absolute;
+    inset: 0 0 auto 0;
+    z-index: 24;
+    display: none;
+    /* In a full window (not full screen) the app's own title bar still covers the top edge. */
+    padding: calc(22px + var(--xt-titlebar-h, 0px)) 28px 56px;
+    background: linear-gradient(to bottom, rgb(0 0 0 / 0.7), rgb(0 0 0 / 0.32) 55%, transparent);
+    color: #fff;
+    pointer-events: none;
+    opacity: 0;
+    transition: opacity 0.22s var(--kd-ease);
+}
+
+.kd-title {
+    overflow: hidden;
+    max-width: 70%;
+    font-size: clamp(18px, 1.5vw, 28px);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-shadow: 0 1px 10px rgb(0 0 0 / 0.5);
+}
+
+.kd-title-detail {
+    overflow: hidden;
+    max-width: 70%;
+    margin-top: 4px;
+    font-size: clamp(13px, 1vw, 17px);
+    opacity: 0.78;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.kd-title-detail:empty {
+    display: none;
+}
+
+.art-video-player.kd-player.art-fullscreen[data-kd-titled] .kd-topbar,
+.art-video-player.kd-player.art-fullscreen-web[data-kd-titled] .kd-topbar,
+.video-js.kd-player.vjs-fullscreen[data-kd-titled] .kd-topbar {
+    display: block;
+}
+
+.art-video-player.kd-player.art-control-show .kd-topbar,
+.video-js.kd-player.vjs-user-active .kd-topbar,
+.video-js.kd-player.vjs-paused .kd-topbar,
+.kd-player[data-kd-paused] .kd-topbar {
+    opacity: 1;
+}
+
+/* Shown together with the player's own bar, and whenever playback is paused. */
+.art-video-player.kd-player.art-control-show .kd-transport,
+.video-js.kd-player.vjs-user-active .kd-transport,
+.video-js.kd-player.vjs-paused .kd-transport,
+.kd-player[data-kd-paused] .kd-transport {
+    opacity: 1;
+}
+
+.art-video-player.kd-player.art-control-show .kd-transport-button,
+.video-js.kd-player.vjs-user-active .kd-transport-button,
+.video-js.kd-player.vjs-paused .kd-transport-button,
+.kd-player[data-kd-paused] .kd-transport-button {
+    pointer-events: auto;
+}
+
+/* Out of the way of the loading spinner, an error, and before anything is loaded. */
+.art-video-player.kd-player.art-loading-show .kd-transport,
+.art-video-player.kd-player.art-mask-show.art-error .kd-transport,
+.video-js.kd-player.vjs-waiting .kd-transport,
+.video-js.kd-player.vjs-seeking .kd-transport,
+.video-js.kd-player.vjs-error .kd-transport,
+.video-js.kd-player:not(.vjs-has-started) .kd-transport {
+    opacity: 0;
+}
+
+.art-video-player.kd-player.art-loading-show .kd-transport-button,
+.video-js.kd-player.vjs-waiting .kd-transport-button,
+.video-js.kd-player.vjs-error .kd-transport-button,
+.video-js.kd-player:not(.vjs-has-started) .kd-transport-button {
+    pointer-events: none;
+}
+
+/* ───────────── ArtPlayer (desktop) ───────────── */
+
+.art-video-player.kd-player {
+    --art-bottom-height: 96px;
+    --art-control-height: 44px;
+    --art-control-icon-size: 26px;
+    --art-progress-height: 8px;
+    --art-padding: 16px;
+    --art-bottom-gap: 8px;
+    font-family: var(--font-sans, inherit);
+}
+
+.art-video-player.kd-player[data-kd-wide] {
+    --art-bottom-height: 128px;
+}
+
+/* Our centre button replaces the corner play badge. */
+.art-video-player.kd-player .art-mask .art-state {
+    display: none !important;
+}
+
+.art-video-player.kd-player .art-bottom {
+    background-image: linear-gradient(
+        to top,
+        rgb(0 0 0 / 0.82) 0%,
+        rgb(0 0 0 / 0.56) 34%,
+        rgb(0 0 0 / 0.2) 68%,
+        transparent 100%
+    );
+}
+
+.art-video-player.kd-player .art-controls {
+    gap: 4px;
+}
+
+.art-video-player.kd-player .art-controls-left,
+.art-video-player.kd-player .art-controls-right {
+    gap: 4px;
+    align-items: center;
+}
+
+.art-video-player.kd-player .art-control {
+    min-width: 40px;
+    height: 40px;
+    padding: 0 7px;
+    border-radius: 12px;
+    opacity: 0.92;
+    transition:
+        background-color 0.16s var(--kd-ease),
+        opacity 0.16s var(--kd-ease);
+}
+
+.art-video-player.kd-player .art-controls .art-control:hover {
+    background: var(--kd-chip);
+    opacity: 1;
+}
+
+.art-video-player.kd-player .art-control-time {
+    padding: 0 10px;
+    font-size: 13px;
+    font-weight: 500;
+    letter-spacing: 0.01em;
+    font-variant-numeric: tabular-nums;
+}
+
+.art-video-player.kd-player .art-controls .art-control-time:hover {
+    background: transparent;
+}
+
+/* Progress: rounded, with a clear handle. ArtPlayer itself draws it at half height and
+   fills the full height under the pointer; the bar is not a button, so it gets no chip. */
+.art-video-player.kd-player .art-progress .art-control-progress {
+    min-width: 0;
+    height: var(--art-progress-height);
+    padding: 0;
+    border-radius: 0;
+    background: transparent;
+    opacity: 1;
+}
+
+.art-video-player.kd-player .art-control-progress-inner {
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.24);
+}
+
+.art-video-player.kd-player .art-progress-loaded,
+.art-video-player.kd-player .art-progress-played,
+.art-video-player.kd-player .art-progress-hover {
+    border-radius: 999px;
+}
+
+.art-video-player.kd-player .art-progress-loaded {
+    background: rgb(255 255 255 / 0.3);
+}
+
+.art-video-player.kd-player .art-progress-indicator {
+    background: #fff;
+    box-shadow:
+        0 0 0 3px color-mix(in oklch, var(--art-theme) 55%, transparent),
+        0 2px 8px rgb(0 0 0 / 0.45);
+}
+
+.art-video-player.kd-player .art-progress-tip {
+    padding: 4px 8px;
+    border-radius: 8px;
+    background: var(--kd-glass);
+    backdrop-filter: blur(12px);
+    font-size: 12px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* Subtitle and audio buttons say what they are when there is room. */
+.art-video-player.kd-player[data-kd-wide] .art-control-xtSubtitles,
+.art-video-player.kd-player[data-kd-wide] .art-control-xtAudio {
+    gap: 7px;
+    padding: 0 12px 0 9px;
+    font-size: 13px;
+    font-weight: 500;
+}
+
+.art-video-player.kd-player[data-kd-wide] .art-control-xtSubtitles::after {
+    content: var(--kd-label-subtitles, "Subtitles");
+}
+
+.art-video-player.kd-player[data-kd-wide] .art-control-xtAudio::after {
+    content: var(--kd-label-audio, "Audio");
+}
+
+/* The speed button: quiet at normal speed, lit when changed. Films and episodes only. */
+.kd-player .kd-speed {
+    min-width: 46px;
+    border: 0;
+    background: transparent;
+    color: #fff;
+    font: inherit;
+    font-size: 13px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    cursor: pointer;
+}
+
+.kd-player .art-controls .kd-speed,
+.kd-player .vjs-control-bar .kd-speed {
+    display: none;
+}
+
+.kd-player[data-kd-seekable] .art-controls .kd-speed,
+.kd-player[data-kd-seekable] .vjs-control-bar .kd-speed {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+
+/* A live channel says so where a film shows its time. */
+.art-video-player.kd-player[data-kd-channels] .art-controls-left::after {
+    content: "LIVE";
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    height: 24px;
+    margin-left: 6px;
+    padding: 0 10px 0 9px;
+    border-radius: 999px;
+    background: rgb(255 255 255 / 0.12);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    background-image: radial-gradient(circle at 12px 50%, #ff4d4f 0 3.5px, transparent 4px);
+    padding-left: 22px;
+}
+
+.kd-player .kd-speed[data-kd-changed] {
+    background: color-mix(in oklch, var(--art-theme, var(--color-accent)) 78%, transparent);
+    opacity: 1;
+}
+
+/* Menus (subtitle and audio lists). */
+.art-video-player.kd-player .art-selector-list {
+    padding: 6px;
+    border: 1px solid rgb(255 255 255 / 0.12);
+    border-radius: 14px;
+    background: rgb(20 20 24 / 0.82);
+    backdrop-filter: blur(18px) saturate(1.3);
+    -webkit-backdrop-filter: blur(18px) saturate(1.3);
+    box-shadow: 0 12px 36px rgb(0 0 0 / 0.42);
+}
+
+.art-video-player.kd-player .art-selector-item {
+    padding: 0 14px;
+    border-radius: 9px;
+    font-size: 13px;
+    text-shadow: none;
+}
+
+.art-video-player.kd-player .art-selector-item:hover {
+    background: var(--kd-chip);
+    color: #fff;
+}
+
+.art-video-player.kd-player .art-selector-list .art-selector-item.art-current {
+    background: color-mix(in oklch, var(--art-theme) 78%, transparent);
+    color: #fff !important;
+    font-weight: 600;
+}
+
+/* Subtitles: the app's own typeface on a soft plate instead of a hard black box. */
+.kd-player video::cue {
+    background: rgb(0 0 0 / 0.52);
+    color: #fff;
+    font-family: var(--font-sans, sans-serif);
+    font-weight: 500;
+    text-shadow: 0 1px 3px rgb(0 0 0 / 0.9);
+}
+
+/* ───────────── Video.js (Android) ───────────── */
+
+.video-js.kd-player .vjs-big-play-button {
+    display: none !important;
+}
+
+/* Video.js sizes everything from its font size; the stock 10px is too small for a finger. */
+.video-js.kd-player {
+    font-size: 12px;
+}
+
+.video-js.kd-player[data-kd-wide] {
+    font-size: 14px;
+}
+
+.video-js.kd-player .vjs-control-bar {
+    height: 4em;
+    padding: 0.6em 0.6em 0.2em;
+    background: linear-gradient(to top, rgb(0 0 0 / 0.82), rgb(0 0 0 / 0.5) 60%, transparent);
+}
+
+/* "0:42 / 1:15" like the desktop player, instead of only the time left. */
+.video-js.kd-player .vjs-current-time,
+.video-js.kd-player .vjs-time-divider,
+.video-js.kd-player .vjs-duration {
+    display: block;
+    min-width: 0;
+    padding: 0 0.25em;
+}
+
+.video-js.kd-player .vjs-remaining-time,
+.video-js.kd-player.vjs-live .vjs-current-time,
+.video-js.kd-player.vjs-live .vjs-time-divider,
+.video-js.kd-player.vjs-live .vjs-duration {
+    display: none;
+}
+
+/* One speed button, ours, whichever way the stream was loaded. */
+.video-js.kd-player .vjs-playback-rate {
+    display: none !important;
+}
+
+.video-js.kd-player .vjs-control-bar .kd-speed {
+    width: auto;
+    min-width: 3.4em;
+    padding: 0 0.6em;
+    font-size: 1.05em;
+}
+
+.video-js.kd-player .vjs-control-bar .vjs-button {
+    border-radius: 0.8em;
+    transition: background-color 0.16s var(--kd-ease);
+}
+
+.video-js.kd-player .vjs-control-bar .vjs-button:hover,
+.video-js.kd-player .vjs-control-bar .vjs-button:focus-visible {
+    background: var(--kd-chip);
+}
+
+.video-js.kd-player .vjs-progress-holder,
+.video-js.kd-player .vjs-play-progress,
+.video-js.kd-player .vjs-load-progress,
+.video-js.kd-player .vjs-load-progress div {
+    border-radius: 999px;
+}
+
+.video-js.kd-player .vjs-play-progress::before {
+    color: #fff;
+    text-shadow: 0 1px 6px rgb(0 0 0 / 0.5);
+}
+
+.video-js.kd-player .vjs-time-control {
+    font-variant-numeric: tabular-nums;
+}
+
+.video-js.kd-player .vjs-menu .vjs-menu-content {
+    border: 1px solid rgb(255 255 255 / 0.12);
+    border-radius: 0.9em;
+    background: rgb(20 20 24 / 0.88);
+    overflow: hidden auto;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .kd-transport,
+    .kd-transport-button {
+        transition: none;
+    }
+}

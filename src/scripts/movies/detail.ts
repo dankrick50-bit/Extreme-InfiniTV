@@ -1,6 +1,7 @@
 // @ts-nocheck - migrated to TS shell; strict typing pending follow-up
 // Movie detail page (route: /movies/detail?id=<vod_id>)
 import { log } from "@/scripts/lib/log.js"
+import { setPlayerTitle } from "@/scripts/lib/player-chrome"
 import {
   loadCreds,
   getActiveEntry,
@@ -875,6 +876,7 @@ function noStreamMessage() {
 
 async function startPlayback(options = {}) {
   if (!movie) return
+  setPlayerTitle(movie.name || "")
   if (isTauri && isCastRoutingActive() && !options.forceLocal) {
     const title = movie.name || ""
     await routePlayToCast({

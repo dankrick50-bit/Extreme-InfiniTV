@@ -2,6 +2,7 @@
 
 import { log, redactUrl } from "@/scripts/lib/log.js"
 import { needsRustLoader, rememberRustLoader } from "@/scripts/lib/stream-loader-memory"
+import { attachPlayerChrome } from "@/scripts/lib/player-chrome"
 import { DEFAULT_BROWSER_UA } from "@/scripts/lib/provider-fetch.js"
 import { splitUrlAuth } from "@/scripts/lib/url-auth.js"
 // Side effect: parks native downloads while a stream is open on a one-connection account.
@@ -126,6 +127,8 @@ export interface MountOptions {
   pictureInPictureToggle?: boolean
   controlBar?: Record<string, unknown>
   html5?: Record<string, unknown>
+  /** The centre play/skip buttons and the restyled bar; off where a remote drives the player. */
+  chrome?: boolean
 }
 
 export const isTauri =
@@ -3059,6 +3062,7 @@ export async function mountPlayer(
   if (backend === "videojs") {
     const handle = await mountVideoJs(videoEl, options)
     wireMonoAudioDisposal(handle)
+    if (options.chrome !== false) attachPlayerChrome(handle)
     return {
       kind: "embedded",
       backend: "videojs",
@@ -3077,6 +3081,7 @@ export async function mountPlayer(
   // artplayer (default)
   const handle = await mountArtPlayer(videoEl, options)
   wireMonoAudioDisposal(handle)
+  if (options.chrome !== false) attachPlayerChrome(handle)
   return {
     kind: "embedded",
     backend: "artplayer",

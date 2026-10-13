@@ -3,6 +3,7 @@
 // Cache-driven on first paint so it works offline once a series has been
 // opened at least once before.
 import { log } from "@/scripts/lib/log.js"
+import { setPlayerTitle } from "@/scripts/lib/player-chrome"
 import {
   loadCreds,
   getActiveEntry,
@@ -1483,6 +1484,7 @@ function retirePreviousPlayback() {
 
 async function playEpisode(episode, options = {}) {
   if (!series || !episode) return
+  setPlayerTitle(series.name || "", [episode.season && episode.episode_num ? `S${episode.season}E${episode.episode_num}` : "", episode.title || ""].filter(Boolean).join(" · "))
   if (isTauri && isCastRoutingActive() && !options.forceLocal) {
     const title = episodeCastTitle(episode)
     await routePlayToCast({

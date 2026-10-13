@@ -501,7 +501,7 @@ export function createEmbeddedReceiverEngine(
     if (!dom.videoEl) return null
     let backend = getPlayerBackend()
     if (backend === "mpv" || backend === "vlc") backend = "artplayer"
-    const result = await mountPlayer(dom.videoEl, backend, { autoplay: true })
+    const result = await mountPlayer(dom.videoEl, backend, { autoplay: true, chrome: false })
     if (result.kind !== "embedded") {
       log.warn("[xt:receiver] mountPlayer returned an external backend; receiver requires embedded playback")
       return null
