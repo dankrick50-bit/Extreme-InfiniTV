@@ -11,7 +11,11 @@ export async function injectVersion() {
 
     try {
         const [version, name] = await Promise.all([getVersion(), getName()])
-        badge.textContent = `${name} v${version}`
+        // The Android build keeps the author's product name in its settings. A fork's build rewrites
+        // that name wherever it is written out whole, so it is spelled in two halves to compare
+        // against and whole to show: a fork then shows its own name here as well.
+        const authorsName = 'Extreme ' + 'InfiniTV'
+        badge.textContent = `${name === authorsName ? 'Extreme InfiniTV' : name} v${version}`
     } catch (e) {
         log.error('Could not get app version:', e)
         const tag = document

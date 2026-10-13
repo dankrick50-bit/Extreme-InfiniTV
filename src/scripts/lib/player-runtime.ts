@@ -3,6 +3,7 @@
 import { log, redactUrl } from "@/scripts/lib/log.js"
 import { needsRustLoader, rememberRustLoader } from "@/scripts/lib/stream-loader-memory"
 import { attachPlayerChrome } from "@/scripts/lib/player-chrome"
+import { isLowMemoryDevice } from "@/scripts/lib/memory-pressure.js"
 import { DEFAULT_BROWSER_UA } from "@/scripts/lib/provider-fetch.js"
 import { splitUrlAuth } from "@/scripts/lib/url-auth.js"
 // Side effect: parks native downloads while a stream is open on a one-connection account.
@@ -1676,6 +1677,13 @@ async function attachMpegts(
           config.autoCleanupMinBackwardDuration = 60
         }
       } catch {}
+    }
+    // A live picture keeps everything it has played until the browser's own limit (about 150 MB
+    // of video) is reached. A device short of memory holds a minute at most instead.
+    if (isLive && isLowMemoryDevice()) {
+      config.autoCleanupSourceBuffer = true
+      config.autoCleanupMaxBackwardDuration = 60
+      config.autoCleanupMinBackwardDuration = 30
     }
     const mediaDataSource: Record<string, unknown> = { type: "mpegts", isLive, url: cleanUrl }
     if (!isLive && Number.isFinite(durationSeconds) && (durationSeconds as number) > 0) {

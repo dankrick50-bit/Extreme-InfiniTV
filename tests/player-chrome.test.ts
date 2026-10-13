@@ -9,12 +9,14 @@ vi.mock("@/scripts/lib/i18n.js", () => ({ t: (key: string) => key }))
 
 import {
   attachPlayerChrome,
+  chooseSubtitle,
   isSeekable,
   nextSpeed,
   setChannelStepper,
   setPlayerTitle,
   skipTarget,
   speedLabel,
+  subtitleChoices,
 } from "../src/scripts/lib/player-chrome"
 
 describe("skipping", () => {
@@ -174,11 +176,14 @@ describe("controls on the player", () => {
     expect(speed.hasAttribute("data-kd-changed")).toBe(true)
   })
 
-  it("adds the same speed button to the Video.js bar, before fullscreen", () => {
+  it("adds its subtitle and speed buttons to the Video.js bar, before fullscreen", () => {
     const player = mountFakePlayer("vjs")
     const bar = player.root.querySelector(".vjs-control-bar") as HTMLElement
-    expect(bar.children[0].classList.contains("kd-speed")).toBe(true)
-    expect(bar.children[1].classList.contains("vjs-fullscreen-control")).toBe(true)
+    expect(Array.from(bar.children).map((child) => child.className.split(" ").pop())).toEqual([
+      "kd-subs",
+      "kd-speed",
+      "vjs-fullscreen-control",
+    ])
   })
 
   it("shows what is playing", () => {
@@ -195,5 +200,80 @@ describe("controls on the player", () => {
     player.fire("loadedmetadata")
     expect(player.root.querySelectorAll(".kd-transport")).toHaveLength(1)
     expect(player.root.querySelectorAll(".kd-speed")).toHaveLength(1)
+  })
+})
+
+function fakeTracks(...tracks: Array<{ kind: string; label: string; language: string; mode: string }>) {
+  return Object.assign([...tracks], { addEventListener() {}, removeEventListener() {} })
+}
+
+describe("subtitle menu", () => {
+  it("offers off first, then each subtitle track by name", () => {
+    const tracks = fakeTracks(
+      { kind: "subtitles", label: "English", language: "en", mode: "showing" },
+      { kind: "metadata", label: "", language: "", mode: "hidden" },
+      { kind: "captions", label: "", language: "es", mode: "disabled" },
+    )
+    expect(subtitleChoices(tracks, "Off")).toEqual([
+      { index: -1, label: "Off", active: false },
+      { index: 0, label: "English", active: true },
+      { index: 1, label: "es", active: false },
+    ])
+  })
+
+  it("offers nothing when the video has no subtitles", () => {
+    expect(subtitleChoices(fakeTracks({ kind: "metadata", label: "", language: "", mode: "hidden" }), "Off")).toEqual([])
+    expect(subtitleChoices(null, "Off")).toEqual([])
+  })
+
+  it("shows the chosen track and switches the rest off", () => {
+    const tracks = fakeTracks(
+      { kind: "subtitles", label: "English", language: "en", mode: "showing" },
+      { kind: "subtitles", label: "Español", language: "es", mode: "disabled" },
+    )
+    chooseSubtitle(tracks, 1)
+    expect(tracks.map((track) => track.mode)).toEqual(["disabled", "showing"])
+    chooseSubtitle(tracks, -1)
+    expect(tracks.map((track) => track.mode)).toEqual(["disabled", "disabled"])
+  })
+
+  it("appears on the Video.js bar when the video has subtitles the player does not list", () => {
+    const player = mountFakePlayer("vjs")
+    const tracks = fakeTracks(
+      { kind: "subtitles", label: "English", language: "en", mode: "disabled" },
+      { kind: "subtitles", label: "Español", language: "es", mode: "disabled" },
+    )
+    ;(player.video as unknown as { textTracks: unknown }).textTracks = tracks
+    player.fire("loadedmetadata")
+    expect(player.root.hasAttribute("data-kd-subtitles")).toBe(true)
+
+    player.click(".kd-subs")
+    const items = Array.from(player.root.querySelectorAll<HTMLElement>(".kd-menu-item"))
+    expect(items.map((item) => item.textContent)).toEqual(["player.subtitles.off", "English", "Español"])
+
+    items[2].dispatchEvent(new MouseEvent("click", { bubbles: true }))
+    expect(tracks.map((track) => track.mode)).toEqual(["disabled", "showing"])
+    expect(player.root.querySelector(".kd-menu")).toBeNull()
+    expect(player.root.querySelector(".kd-subs")?.hasAttribute("data-kd-changed")).toBe(true)
+  })
+
+  it("stays away when Video.js shows its own subtitle button", () => {
+    const player = mountFakePlayer("vjs")
+    const own = document.createElement("button")
+    own.className = "vjs-subs-caps-button"
+    player.root.querySelector(".vjs-control-bar")?.appendChild(own)
+    ;(player.video as unknown as { textTracks: unknown }).textTracks = fakeTracks({
+      kind: "subtitles",
+      label: "English",
+      language: "en",
+      mode: "disabled",
+    })
+    player.fire("loadedmetadata")
+    expect(player.root.hasAttribute("data-kd-subtitles")).toBe(false)
+  })
+
+  it("is not added to ArtPlayer, which has its own for every stream", () => {
+    const player = mountFakePlayer("art")
+    expect(player.root.querySelector(".kd-subs")).toBeNull()
   })
 })

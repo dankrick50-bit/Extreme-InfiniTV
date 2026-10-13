@@ -1,6 +1,8 @@
 // The look and the extra controls of the built-in player on the main screens: a centre
 // play/pause with ten-second skips (channel down / up on Live TV), a speed button, labelled
 // subtitle and audio buttons, and the title of what is playing when the player fills the screen.
+// Where the player underneath shows no subtitle button although the video carries subtitle
+// tracks (Video.js with a stream it did not load itself), a subtitle menu is added too.
 //
 // It sits on top of whichever player the page mounted (ArtPlayer on desktop, Video.js on
 // Android) and only drives it through the shared handle and the <video> element, so the
@@ -33,6 +35,46 @@ export function nextSpeed(current: number): number {
   const index = SPEEDS.findIndex((speed) => Math.abs(speed - current) < 0.01)
   if (index < 0) return SPEEDS[0]
   return SPEEDS[(index + 1) % SPEEDS.length]
+}
+
+export interface SubtitleChoice {
+  /** Position among the video's subtitle tracks; -1 is "off". */
+  index: number
+  label: string
+  active: boolean
+}
+
+interface TrackLike {
+  kind: string
+  label: string
+  language: string
+  mode: string
+}
+
+function subtitleTracksOf(tracks: ArrayLike<TrackLike> | null | undefined): TrackLike[] {
+  return Array.from(tracks || []).filter((track) => track.kind === "subtitles" || track.kind === "captions")
+}
+
+/** What a subtitle menu offers for these tracks: "off" first, then each track by its name. */
+export function subtitleChoices(tracks: ArrayLike<TrackLike> | null | undefined, offLabel: string): SubtitleChoice[] {
+  const subtitles = subtitleTracksOf(tracks)
+  if (!subtitles.length) return []
+  const showing = subtitles.findIndex((track) => track.mode === "showing")
+  return [
+    { index: -1, label: offLabel, active: showing < 0 },
+    ...subtitles.map((track, index) => ({
+      index,
+      label: track.label || track.language || String(index + 1),
+      active: index === showing,
+    })),
+  ]
+}
+
+/** Shows the chosen subtitle track and switches the others off. */
+export function chooseSubtitle(tracks: ArrayLike<TrackLike> | null | undefined, index: number): void {
+  subtitleTracksOf(tracks).forEach((track, position) => {
+    track.mode = position === index ? "showing" : "disabled"
+  })
 }
 
 export function speedLabel(rate: number): string {
@@ -71,6 +113,7 @@ interface ChromeHandle {
 const ICON_ATTRS = 'viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"'
 const TEN = '<text x="12" y="15.6" text-anchor="middle" font-size="7.4" font-weight="700" fill="currentColor" stroke="none">10</text>'
 const ICONS = {
+  subtitles: `<svg ${ICON_ATTRS}><rect x="2.8" y="5.2" width="18.4" height="13.6" rx="2.6"/><path d="M10 10.6a2 2 0 1 0 0 2.8M16.4 10.6a2 2 0 1 0 0 2.8"/></svg>`,
   previous: `<svg ${ICON_ATTRS}><path d="M18.5 5.6v12.8L8.8 12z" fill="currentColor"/><path d="M5.5 5.5v13"/></svg>`,
   next: `<svg ${ICON_ATTRS}><path d="M5.5 5.6v12.8l9.7-6.4z" fill="currentColor"/><path d="M18.5 5.5v13"/></svg>`,
   back: `<svg ${ICON_ATTRS}><path d="M3.2 12a8.8 8.8 0 1 0 2.9-6.5"/><path d="M3.4 3.6v4.6H8"/>${TEN}</svg>`,
@@ -101,6 +144,9 @@ export function attachPlayerChrome(handle: ChromeHandle): void {
   let speed: HTMLElement | null = null
   let titleText: HTMLElement | null = null
   let titleDetail: HTMLElement | null = null
+  let subtitleButton: HTMLButtonElement | null = null
+  let subtitleMenu: HTMLElement | null = null
+  let watchedTracks: TextTrackList | null = null
 
   const media = () => handle.getMediaElement?.() ?? null
 
@@ -128,9 +174,67 @@ export function attachPlayerChrome(handle: ChromeHandle): void {
     }
   }
 
+  function closeSubtitleMenu(): void {
+    subtitleMenu?.remove()
+    subtitleMenu = null
+    subtitleButton?.setAttribute("aria-expanded", "false")
+  }
+
+  function openSubtitleMenu(): void {
+    const video = media()
+    if (!root || !video || !subtitleButton) return
+    const choices = subtitleChoices(video.textTracks, t("player.subtitles.off"))
+    if (!choices.length) return
+    const menu = document.createElement("div")
+    menu.className = "kd-menu"
+    menu.setAttribute("role", "menu")
+    menu.setAttribute("aria-label", t("player.subtitles"))
+    for (const choice of choices) {
+      const item = button("kd-menu-item", choice.label, "")
+      item.title = ""
+      item.textContent = choice.label
+      item.setAttribute("role", "menuitemradio")
+      item.setAttribute("aria-checked", String(choice.active))
+      item.addEventListener("click", () => {
+        chooseSubtitle(media()?.textTracks, choice.index)
+        closeSubtitleMenu()
+        syncSubtitles()
+      })
+      menu.appendChild(item)
+    }
+    root.appendChild(menu)
+    subtitleMenu = menu
+    subtitleButton.setAttribute("aria-expanded", "true")
+  }
+
+  // Ours only where the player has none of its own to show.
+  function syncSubtitles(): void {
+    const video = media()
+    if (!root || !video || !subtitleButton) return
+    if (video.textTracks !== watchedTracks) {
+      watchedTracks?.removeEventListener("addtrack", syncSubtitles)
+      watchedTracks?.removeEventListener("removetrack", syncSubtitles)
+      watchedTracks?.removeEventListener("change", syncSubtitles)
+      watchedTracks = video.textTracks ?? null
+      watchedTracks?.addEventListener("addtrack", syncSubtitles)
+      watchedTracks?.addEventListener("removetrack", syncSubtitles)
+      watchedTracks?.addEventListener("change", syncSubtitles)
+    }
+    const choices = subtitleChoices(video.textTracks, "")
+    // Video.js marks only the button's wrapper (the bar's own child) as hidden; the button inside
+    // it carries the same class name and never is.
+    const ownButton = root.querySelector(".vjs-control-bar > .vjs-subs-caps-button")
+    const playerHasItsOwn = !!ownButton && !ownButton.classList.contains("vjs-hidden")
+    const offer = choices.length > 0 && !playerHasItsOwn
+    root.toggleAttribute("data-kd-subtitles", offer)
+    subtitleButton.toggleAttribute("data-kd-changed", choices.some((choice) => choice.index >= 0 && choice.active))
+    if (!offer) closeSubtitleMenu()
+  }
+
   function sync(): void {
     const video = media()
     if (!root || !video) return
+    syncSubtitles()
     const paused = video.paused
     const seekable = isSeekable(video.duration)
     root.toggleAttribute("data-kd-paused", paused)
@@ -200,6 +304,20 @@ export function attachPlayerChrome(handle: ChromeHandle): void {
       if (artControls) artControls.prepend(pill)
       else vjsBar?.insertBefore(pill, vjsBar.querySelector(".vjs-picture-in-picture-control, .vjs-fullscreen-control"))
       speed = pill
+    }
+
+    // ArtPlayer already has a subtitle button for every kind of stream; Video.js does not.
+    if (vjsBar) {
+      const subtitles = button("vjs-control vjs-button kd-subs", t("player.subtitles"), ICONS.subtitles)
+      subtitles.setAttribute("aria-haspopup", "menu")
+      subtitles.setAttribute("aria-expanded", "false")
+      subtitles.addEventListener("click", () => (subtitleMenu ? closeSubtitleMenu() : openSubtitleMenu()))
+      vjsBar.insertBefore(subtitles, speed ?? vjsBar.querySelector(".vjs-picture-in-picture-control, .vjs-fullscreen-control"))
+      subtitleButton = subtitles
+      // A tap anywhere else on the player puts the menu away.
+      root.addEventListener("click", (event) => {
+        if (subtitleMenu && !subtitleMenu.contains(event.target as Node)) closeSubtitleMenu()
+      })
     }
 
     if (typeof ResizeObserver !== "undefined") {
