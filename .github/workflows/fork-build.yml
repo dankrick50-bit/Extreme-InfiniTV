@@ -6,6 +6,9 @@
 #   ANDROID_KEYSTORE_*           one signing key for every APK (Android refuses any other)
 #   TAURI_SIGNING_PRIVATE_KEY*   signs the Windows and AppImage installers for self-update
 # Without them the build still works; it just cannot be installed as an update.
+#
+# A branch named try/... is a test build: it makes the all-device Android APK only and publishes
+# nothing, so installed apps never update to it. The APK is kept with the run as an artifact.
 name: Fork build
 
 on:
@@ -26,6 +29,7 @@ permissions:
 
 jobs:
   desktop:
+    if: ${{ !startsWith(github.ref_name, 'try/') }}
     strategy:
       fail-fast: false
       matrix:
@@ -149,7 +153,8 @@ jobs:
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: "src-tauri -> target"
-          key: fork-android
+          # "kdpatch": build folders cached before the freeze fix below hold an unfixed Tauri.
+          key: fork-android-kdpatch1
 
       - run: pnpm install --frozen-lockfile
 
@@ -189,6 +194,13 @@ jobs:
           } >> "$GITHUB_ENV"
           echo "::warning::APK signed with a one-off key. Add ANDROID_KEYSTORE_* secrets to this fork to keep one key across builds."
 
+      # Must come before anything is compiled; see build-tools/patch-tauri-android.mjs.
+      - name: Apply the Android freeze fix to the app framework
+        run: |
+          set -euo pipefail
+          cargo fetch --manifest-path src-tauri/Cargo.toml --locked
+          node build-tools/patch-tauri-android.mjs
+
       - name: Build APK (universal)
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.13846066
@@ -216,12 +228,14 @@ jobs:
       # Stick 4K runs. Same package and signing key as the build above, so any of the three
       # installs over any other. The Rust code is already compiled; this only repackages.
       - name: Build device APKs
+        if: ${{ !startsWith(github.ref_name, 'try/') }}
         env:
           NDK_HOME: ${{ env.ANDROID_HOME }}/ndk/29.0.13846066
           XT_SKIP_FFMPEG_SIDECAR: "1"
         run: pnpm tauri android build --apk --split-per-abi --target aarch64 --target armv7
 
       - name: Collect device APKs
+        if: ${{ !startsWith(github.ref_name, 'try/') }}
         run: |
           set -euo pipefail
           NAME="$(node -p "require('./build-tools/brand.json').productName")"
@@ -245,7 +259,7 @@ jobs:
 
   publish:
     needs: [desktop, android]
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && !startsWith(github.ref_name, 'try/') }}
     runs-on: ubuntu-latest
     permissions:
       contents: write
