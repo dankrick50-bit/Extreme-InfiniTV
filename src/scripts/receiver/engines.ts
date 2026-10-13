@@ -10,6 +10,7 @@ import {
 import { getPlayerBackend } from "@/scripts/lib/app-settings.js"
 import type { CastDescriptorV1 } from "@/scripts/lib/tv-cast-descriptor"
 import { t } from "@/scripts/lib/i18n.js"
+import { createReconnectBudget, LIVE_RECONNECT_DELAY_MS } from "@/scripts/lib/live-reconnect"
 import { log } from "@/scripts/lib/log.js"
 import { decodedFrameCount } from "@/scripts/lib/player-telemetry.js"
 import {
@@ -161,6 +162,11 @@ export function createEmbeddedReceiverEngine(
   // Guards a stale async handleError from clobbering a newer session.
   let playGeneration = 0
   let pendingResumeCleanup: (() => void) | null = null
+  let currentDescriptor: CastDescriptorV1 | null = null
+  // Only a channel that was already playing is reconnected; one that never started gets the error panel.
+  let playedThisSession = false
+  const liveReconnects = createReconnectBudget()
+  let reconnectTimer: ReturnType<typeof setTimeout> | null = null
 
   let titleHideTimer: ReturnType<typeof setTimeout> | null = null
   let errorHideTimer: ReturnType<typeof setTimeout> | null = null
@@ -364,14 +370,60 @@ export function createEmbeddedReceiverEngine(
         return
       }
       log.warn("[xt:receiver] stream never reached playing state within timeout")
+      if (reconnectLive(handle, "timeout")) return
       void handleError("timeout")
     }
     loadingTimeoutTimer = setTimeout(check, silenceWindowMs)
   }
 
+  function clearReconnectTimer(): void {
+    if (reconnectTimer) {
+      clearTimeout(reconnectTimer)
+      reconnectTimer = null
+    }
+  }
+
+  function applySource(handle: VjsLikeHandle, descriptor: CastDescriptorV1): void {
+    handle.src({
+      src: descriptor.src,
+      type: descriptor.mime,
+      drm: descriptor.drm ?? null,
+      isLive: descriptor.isLive,
+      durationSeconds: descriptor.durationSeconds,
+      timelineOffsetSeconds: descriptor.timelineOffsetSeconds,
+      preferNativeHls: descriptor.preferNativeHls,
+    })
+  }
+
+  // A live channel has no end: one that was playing and then ended, failed or went silent lost its connection.
+  function reconnectLive(handle: VjsLikeHandle, reason: string): boolean {
+    const descriptor = currentDescriptor
+    if (!descriptor?.isLive || !playedThisSession || tearingDown || activeHandle !== handle) return false
+    if (reconnectTimer) return true
+    if (!liveReconnects.take()) return false
+    log.warn("[xt:receiver] live connection lost - reconnecting", { reason })
+    const generation = playGeneration
+    clearDeadVideoWatchdog()
+    clearLoadingWatchdog()
+    showLoading(true, descriptor.title)
+    report({ state: "buffering" })
+    reconnectTimer = setTimeout(() => {
+      reconnectTimer = null
+      if (generation !== playGeneration || activeHandle !== handle || tearingDown) return
+      applySource(handle, descriptor)
+      armLoadingWatchdog(handle)
+      playWhenReady(handle, {
+        isStale: () => activeHandle !== handle,
+        onReject: (err) => log.warn("[xt:receiver] play() rejected after reconnect:", err),
+      })
+    }, LIVE_RECONNECT_DELAY_MS)
+    return true
+  }
+
   function teardownInternal(notify: boolean, options?: { reportIdle?: boolean }): void {
     tearingDown = true
     playGeneration++
+    clearReconnectTimer()
     if (titleHideTimer) clearTimeout(titleHideTimer)
     if (errorHideTimer) clearTimeout(errorHideTimer)
     clearDeadVideoWatchdog()
@@ -396,6 +448,8 @@ export function createEmbeddedReceiverEngine(
     if (mediaListenersWired) return
     mediaListenersWired = true
     handle.on("playing", () => {
+      playedThisSession = true
+      liveReconnects.notePlaying()
       showLoading(false)
       dom.pausedEl?.classList.add("hidden")
       clearLoadingWatchdog()
@@ -404,6 +458,8 @@ export function createEmbeddedReceiverEngine(
     })
     handle.on("pause", () => {
       if (tearingDown) return
+      // The browser pauses right before "ended"; on a live channel that is a lost connection, not a pause.
+      if (currentIsLive && getMediaElementFor(handle)?.ended) return
       clearLoadingWatchdog()
       dom.pausedEl?.classList.remove("hidden")
       report({ state: "paused" })
@@ -415,11 +471,15 @@ export function createEmbeddedReceiverEngine(
       report({ state: "buffering" })
     })
     handle.on("ended", () => {
+      if (reconnectLive(handle, "ended")) return
       report({ state: "ended" })
       // Already reported terminal state above; a trailing idle would erase it for poll-mode senders.
       teardownInternal(true, { reportIdle: false })
     })
-    handle.on("error", () => void handleError())
+    handle.on("error", () => {
+      if (reconnectLive(handle, "error")) return
+      void handleError()
+    })
     for (const event of LOAD_PROGRESS_EVENTS) {
       handle.on(event, () => { lastLoadProgressAt = Date.now() })
     }
@@ -465,6 +525,10 @@ export function createEmbeddedReceiverEngine(
       currentSrc = descriptor.src
       currentUserAgent = descriptor.headers?.userAgent ?? null
       currentIsLive = descriptor.isLive
+      currentDescriptor = descriptor
+      playedThisSession = false
+      liveReconnects.reset()
+      clearReconnectTimer()
       // Seeded from the sender's metadata so the first report already carries a range.
       knownDurationSeconds = descriptor.isLive ? undefined : normalizeReportedDuration(descriptor.durationSeconds)
 
@@ -477,15 +541,7 @@ export function createEmbeddedReceiverEngine(
       if (attemptGeneration !== playGeneration) return false
       activeHandle = handle
 
-      handle.src({
-        src: descriptor.src,
-        type: descriptor.mime,
-        drm: descriptor.drm ?? null,
-        isLive: descriptor.isLive,
-        durationSeconds: descriptor.durationSeconds,
-        timelineOffsetSeconds: descriptor.timelineOffsetSeconds,
-        preferNativeHls: descriptor.preferNativeHls,
-      })
+      applySource(handle, descriptor)
       armLoadingWatchdog(handle)
 
       pendingResumeCleanup?.()

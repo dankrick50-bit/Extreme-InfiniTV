@@ -7,6 +7,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import android.util.Rational
 import android.view.KeyEvent
@@ -74,6 +75,11 @@ class VideoActivity : AppCompatActivity() {
     const val MODE_LIVE = "live"
 
     private const val PROGRESS_INTERVAL_MS = 2_000L
+    // A live channel whose connection ends is opened again: a few tries in a row, earned back
+    // once a connection has held this long (the same numbers as live-reconnect.ts).
+    private const val LIVE_RECONNECT_MAX = 3
+    private const val LIVE_RECONNECT_REFILL_MS = 30_000L
+    private const val LIVE_RECONNECT_DELAY_MS = 1_000L
     // DefaultTimeBar defaults to a 20-step key increment, so a 100-minute movie steps 5
     // minutes per D-pad press; pin a fixed 15s step instead.
     private const val TIME_BAR_KEY_INCREMENT_MS = 15_000L
@@ -130,6 +136,19 @@ class VideoActivity : AppCompatActivity() {
   private var finishedEmitted = false
   // Records an onPause()-initiated stop so onResume() resumes without overriding a viewer pause.
   private var resumePlaybackOnReturn = false
+
+  private var liveReconnectsUsed = 0
+  private var liveHasPlayed = false
+  // 0 while the channel is not playing.
+  private var livePlayingSinceMs = 0L
+  private val liveReconnectRunnable = Runnable {
+    val player = exoPlayer ?: return@Runnable
+    val channel = channels.getOrNull(currentChannelIndex) ?: return@Runnable
+    if (mode != MODE_LIVE) return@Runnable
+    // loadChannel starts playback; a viewer who had paused stays paused.
+    val wasPlaying = player.playWhenReady
+    if (loadChannel(channel, fireEvent = false)) player.playWhenReady = wasPlaying
+  }
 
   private val progressHandler = Handler(Looper.getMainLooper())
   private val progressTick = object : Runnable {
@@ -522,6 +541,7 @@ class VideoActivity : AppCompatActivity() {
       override fun onPlayerError(error: PlaybackException) {
         val httpStatus = httpStatusOf(error)
         Log.e(TAG, "playback error: ${error.errorCodeName} http=$httpStatus", error)
+        if (reconnectLive(error.errorCodeName)) return
         EventQueue.append(
           this@VideoActivity,
           "xt:android-native-error",
@@ -557,6 +577,14 @@ class VideoActivity : AppCompatActivity() {
         updateKeepScreenOn(player)
         // STATE_READY knows the timeline; ticks only fire while playing, so report it right away.
         if (state == Player.STATE_READY && mode == MODE_VOD) emitProgress(player)
+        if (mode == MODE_LIVE) {
+          if (state == Player.STATE_READY) {
+            liveHasPlayed = true
+            if (livePlayingSinceMs == 0L) livePlayingSinceMs = SystemClock.elapsedRealtime()
+          }
+          // A live channel has no end: the provider closed the connection.
+          if (state == Player.STATE_ENDED) reconnectLive("ended")
+        }
         if (state == Player.STATE_ENDED && mode == MODE_VOD) {
           finishedEmitted = true
           EventQueue.append(
@@ -651,6 +679,7 @@ class VideoActivity : AppCompatActivity() {
   }
 
   private fun releasePlayer() {
+    progressHandler.removeCallbacks(liveReconnectRunnable)
     mediaSession?.release()
     mediaSession = null
     exoPlayer?.release()
@@ -787,6 +816,11 @@ class VideoActivity : AppCompatActivity() {
     currentChannelIndex = newIndex
     val channel = channels[newIndex]
     channelAdapter?.updateCurrentIndex(newIndex)
+    // A new channel starts with the full reconnect allowance.
+    progressHandler.removeCallbacks(liveReconnectRunnable)
+    liveReconnectsUsed = 0
+    liveHasPlayed = false
+    livePlayingSinceMs = 0L
     if (!loadChannel(channel, fireEvent = true)) {
       currentChannelIndex = previousIndex
       channelAdapter?.updateCurrentIndex(previousIndex)
@@ -797,6 +831,21 @@ class VideoActivity : AppCompatActivity() {
     if (channels.isEmpty()) return
     val next = ((currentChannelIndex + delta) % channels.size + channels.size) % channels.size
     switchChannelByIndex(next)
+  }
+
+  // True when the lost connection is being reopened, so the caller does not report a failure.
+  // Only a channel that was already playing qualifies; one that never started still shows its error.
+  private fun reconnectLive(reason: String): Boolean {
+    if (mode != MODE_LIVE || !liveHasPlayed || exoPlayer == null) return false
+    val now = SystemClock.elapsedRealtime()
+    if (livePlayingSinceMs != 0L && now - livePlayingSinceMs >= LIVE_RECONNECT_REFILL_MS) liveReconnectsUsed = 0
+    livePlayingSinceMs = 0L
+    if (liveReconnectsUsed >= LIVE_RECONNECT_MAX) return false
+    liveReconnectsUsed++
+    Log.w(TAG, "live connection lost ($reason) - reconnecting, try $liveReconnectsUsed of $LIVE_RECONNECT_MAX")
+    progressHandler.removeCallbacks(liveReconnectRunnable)
+    progressHandler.postDelayed(liveReconnectRunnable, LIVE_RECONNECT_DELAY_MS)
+    return true
   }
 
   private fun loadChannel(channel: ChannelLite, fireEvent: Boolean): Boolean {

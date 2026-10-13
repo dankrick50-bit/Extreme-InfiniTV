@@ -1,6 +1,7 @@
 // Unified mount surface for the playback backends; the external MPV/VLC ones are desktop only.
 
 import { log, redactUrl } from "@/scripts/lib/log.js"
+import { needsRustLoader, rememberRustLoader } from "@/scripts/lib/stream-loader-memory"
 import { DEFAULT_BROWSER_UA } from "@/scripts/lib/provider-fetch.js"
 import { splitUrlAuth } from "@/scripts/lib/url-auth.js"
 // Side effect: parks native downloads while a stream is open on a one-connection account.
@@ -840,6 +841,9 @@ interface MpegtsHandle {
   getPlayer: () => any
 }
 
+// How long after "the page is leaving" before concluding that it did not.
+const PAGE_LEAVE_GRACE_MS = 1500
+
 // Custom mpegts.js loader that streams via tauri-plugin-http instead of the
 // WebView's fetch. The plugin runs the request on the Rust side, so CORS
 // doesn't apply - some providers (and their redirect targets) don't send
@@ -855,6 +859,21 @@ function createTauriStreamLoaderClass(mpegts: any) {
     private _requestAbort = false
     private _receivedLength = 0
     private _rangeFrom = 0
+    // The request lives on the Rust side, which does not know the page went away. Left alone, the
+    // provider connection stays open after leaving the page, and an account that allows one
+    // connection has none left for whatever is played next.
+    // Cancelled as the page starts to leave, while its messages still get through; by the time
+    // it is being torn down they often do not.
+    private _onPageLeaving = () => {
+      if (this._requestAbort) return
+      this.abort()
+      // The page stayed after all (the navigation was cancelled): report the closed stream so the
+      // player reconnects instead of freezing on a connection that is gone.
+      setTimeout(() => {
+        this._status = LoaderStatus.kError
+        this.onError?.(LoaderErrors.EXCEPTION, { code: -1, msg: "stream closed for a page change that did not happen" })
+      }, PAGE_LEAVE_GRACE_MS)
+    }
 
     static isSupported() {
       return isTauri
@@ -878,6 +897,8 @@ function createTauriStreamLoaderClass(mpegts: any) {
       this._receivedLength = 0
       this._rangeFrom = range?.from > 0 ? range.from : 0
       this._abortController = new AbortController()
+      window.addEventListener("beforeunload", this._onPageLeaving)
+      window.addEventListener("pagehide", this._onPageLeaving)
       const sourceURL = dataSource?.redirectedURL || dataSource?.url
       const seekConfig = this._seekHandler.getConfig(sourceURL, range)
       void this._openStream(seekConfig)
@@ -929,6 +950,7 @@ function createTauriStreamLoaderClass(mpegts: any) {
             return
           }
           if (done) {
+            this._stopWatchingPage()
             this._status = LoaderStatus.kComplete
             this.onComplete?.(this._rangeFrom, this._rangeFrom + this._receivedLength - 1)
             return
@@ -951,8 +973,14 @@ function createTauriStreamLoaderClass(mpegts: any) {
       }
     }
 
+    private _stopWatchingPage() {
+      window.removeEventListener("beforeunload", this._onPageLeaving)
+      window.removeEventListener("pagehide", this._onPageLeaving)
+    }
+
     abort() {
       this._requestAbort = true
+      this._stopWatchingPage()
       try { this._abortController?.abort() } catch {}
     }
   }
@@ -1533,6 +1561,8 @@ async function attachMpegts(
   let disposed = false
   let player: any = null
   let triedTauriLoader = false
+  // Set once the stream's contents were readable; a failure after that is a lost connection, not a blocked host.
+  let streamWasReadable = false
   let durationRetryTimer: ReturnType<typeof setInterval> | null = null
   let offsetWrapTimer: ReturnType<typeof setInterval> | null = null
 
@@ -1654,6 +1684,7 @@ async function attachMpegts(
     )
     player.on(mpegts.Events.MEDIA_INFO, (info: any) => {
       if (disposed) return
+      streamWasReadable = true
       if (info?.videoCodec || info?.audioCodec) {
         onMediaInfo?.({
           videoCodec: info.videoCodec ? String(info.videoCodec) : undefined,
@@ -1685,6 +1716,7 @@ async function attachMpegts(
           !triedTauriLoader
         ) {
           triedTauriLoader = true
+          if (!streamWasReadable) rememberRustLoader(cleanUrl)
           log.warn(
             "[xt:player] mpegts network error - retrying via Tauri HTTP loader:",
             errorDetail
@@ -1714,8 +1746,9 @@ async function attachMpegts(
     } catch {}
   }
 
-  // Browser fetch rejects userinfo URLs, so credentialed streams start straight on the Tauri HTTP loader.
-  const startsWithTauriLoader = isTauri && Boolean(authorization)
+  // Browser fetch rejects userinfo URLs, so credentialed streams start straight on the Tauri HTTP loader;
+  // so do hosts it already failed to read, sparing them a doomed first connection.
+  const startsWithTauriLoader = isTauri && (Boolean(authorization) || needsRustLoader(cleanUrl))
   if (startsWithTauriLoader) triedTauriLoader = true
   start(startsWithTauriLoader)
   return {

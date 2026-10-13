@@ -30,6 +30,8 @@ mod http_range;
 #[cfg(not(any(target_os = "android", target_os = "ios")))]
 mod matroska;
 
+mod page_streams;
+
 mod receiver;
 
 mod receiver_store;
@@ -229,7 +231,9 @@ pub fn run() {
         .manage(warmup::WarmupState::default())
         .manage(downloader::DownloaderState::default())
         .manage(cast_bridge::BridgeState::default())
-        .manage(receiver::ReceiverState::default());
+        .manage(receiver::ReceiverState::default())
+        .manage(page_streams::LeftBehind::default())
+        .on_page_load(|webview, payload| page_streams::on_page_load(webview, payload.event()));
 
     #[cfg(not(target_os = "ios"))]
     let builder = builder.plugin(build_log_plugin().build());

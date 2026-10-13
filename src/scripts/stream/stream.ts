@@ -83,6 +83,7 @@ import { ensureHevcDecodable, isWindowsDesktop } from "@/scripts/lib/hevc-extens
 import { applyStreamHeaders } from "@/scripts/lib/stream-headers.ts"
 import { renderProviderError } from "@/scripts/lib/provider-error.js"
 import { toast, toastError } from "@/scripts/lib/toast.js"
+import { LIVE_RECONNECT_DELAY_MS } from "@/scripts/lib/live-reconnect"
 import { requestLogoFallback } from "@/scripts/lib/logo-fallback.ts"
 import { mountCachedImage } from "@/scripts/lib/img-cache.ts"
 import {
@@ -1918,6 +1919,8 @@ let catchupAutoRetryCount = 0
 const CATCHUP_MAX_AUTO_RETRIES = 2
 // Retry budget refills only after sustained playback; an instant reset on "playing" lets a plays-briefly-then-dies source loop forever.
 let catchupRetryResetTimer: ReturnType<typeof setTimeout> | null = null
+// The play context the pending timer was armed for; tells a rebuffer on the same live connection from a new one.
+let retryResetTimerContext: unknown = null
 const CATCHUP_RETRY_RESET_AFTER_MS = 30_000
 // Native-bar seeks outside the buffer re-request the stream; these track the interceptor.
 let catchupSeekingEl: HTMLVideoElement | null = null
@@ -2210,14 +2213,25 @@ async function mountEmbeddedPlayer(backend, opts) {
         rememberAudioTranscodeChannel(activePlaylistId, String(lastPlayContext.streamId))
       }
     }
-    if (catchupRetryResetTimer) clearTimeout(catchupRetryResetTimer)
-    const streamIdAtPlaying = lastPlayContext?.streamId
-    catchupRetryResetTimer = setTimeout(() => {
-      catchupAutoRetryCount = 0
-      catchupSeekRemountCount = 0
-      if (streamIdAtPlaying != null) audioProxyStallRetuneCounts.delete(streamIdAtPlaying)
-      if (streamIdAtPlaying != null) liveStallRetuneCounts.delete(streamIdAtPlaying)
-    }, CATCHUP_RETRY_RESET_AFTER_MS)
+    // A rebuffer fires "playing" again. On a live connection that must not push the refill out,
+    // or a channel that rebuffers now and then never earns its retries back and the next drop ends it.
+    const sameLiveConnection =
+      !!catchupRetryResetTimer && !catchupSession && !!lastPlayContext?.isLive && retryResetTimerContext === lastPlayContext
+    if (!sameLiveConnection) {
+      if (catchupRetryResetTimer) clearTimeout(catchupRetryResetTimer)
+      const streamIdAtPlaying = lastPlayContext?.streamId
+      const contextAtPlaying = lastPlayContext
+      retryResetTimerContext = contextAtPlaying
+      catchupRetryResetTimer = setTimeout(() => {
+        catchupRetryResetTimer = null
+        catchupAutoRetryCount = 0
+        catchupSeekRemountCount = 0
+        // A connection that held this long was a good one, so the next drop gets its own retry instead of the failure panel.
+        if (contextAtPlaying && contextAtPlaying === lastPlayContext) contextAtPlaying.retried = false
+        if (streamIdAtPlaying != null) audioProxyStallRetuneCounts.delete(streamIdAtPlaying)
+        if (streamIdAtPlaying != null) liveStallRetuneCounts.delete(streamIdAtPlaying)
+      }, CATCHUP_RETRY_RESET_AFTER_MS)
+    }
     hideTuningOverlay()
     hideBufferingChip()
     clearStallSentinel()
@@ -2242,6 +2256,18 @@ async function mountEmbeddedPlayer(backend, opts) {
     log.info("[xt:livetv] stalled (no data arriving)", { streamId: lastPlayContext?.streamId ?? null })
     showBufferingChip()
     armStallSentinel()
+  })
+  // A live channel has no end: the provider closed the connection, so open it again instead of sitting on the last picture.
+  vjs.on("ended", () => {
+    const ctx = lastPlayContext
+    if (!ctx?.isLive || !ctx.started || catchupSession) return
+    log.warn("[xt:livetv] live connection closed - reconnecting", { streamId: ctx.streamId })
+    showBufferingChip()
+    const seqAtEnd = ctx.seq
+    setTimeout(() => {
+      if (seqAtEnd !== playSeq || lastPlayContext !== ctx) return
+      performStallRetune("connection-closed")
+    }, LIVE_RECONNECT_DELAY_MS)
   })
   vjs.on("pause", () => {
     if (Date.now() < suppressPauseTrackingUntilMs) return
@@ -3008,6 +3034,11 @@ function performStallRetune(trigger) {
   const ctx = lastPlayContext
   if (!ctx || !vjs) return
   log.warn("[xt:livetv] stalled - re-tuning", { streamId: ctx.streamId, trigger })
+  // The refill measures how long one connection held, and this one is over.
+  if (catchupRetryResetTimer) {
+    clearTimeout(catchupRetryResetTimer)
+    catchupRetryResetTimer = null
+  }
   if (retryCatchupSession(ctx, { automatic: true })) return
   if (!ctx.isLive) {
     // Retry budget exhausted (or no session to resume) - the archive URL is now stale, so escalate instead of replaying it.
