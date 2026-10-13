@@ -2190,6 +2190,8 @@ class MainActivity : TauriActivity() {
     installSplashScreen()
     enableEdgeToEdge()
     super.onCreate(savedInstanceState)
+    // A downloaded update has been installed (or abandoned) by the time the app starts again.
+    if (savedInstanceState == null) clearTemporaryFiles("update")
 
     // Nothing in Tauri 2.11 calls PluginManager.onActivityCreate() automatically,
     // so SAF pickers (tauri-plugin-android-fs, tauri-plugin-dialog) otherwise
@@ -2498,7 +2500,21 @@ class MainActivity : TauriActivity() {
         Log.w("ReceiverKeepAlive", "stop on destroy failed", error)
       }
     }
+    // Leaving for good: files made to hand a log to another app have served their purpose.
+    if (isFinishing) clearTemporaryFiles("logshare")
     super.onDestroy()
+  }
+
+  // Deletes one of the single-use folders this app keeps under its cache directory, off the UI thread.
+  private fun clearTemporaryFiles(folder: String) {
+    val target = File(cacheDir, folder)
+    Thread {
+      try {
+        if (target.exists()) target.deleteRecursively()
+      } catch (error: Throwable) {
+        Log.w("TempFiles", "could not clear $folder", error)
+      }
+    }.start()
   }
 
   private fun drainAndDispatchVideoEvents() {

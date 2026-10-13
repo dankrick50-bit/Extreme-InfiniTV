@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dark icon on the white focused disc, white icon otherwise. -->
+<selector xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:state_focused="true" android:color="#FF16161A" />
+    <item android:color="#FFFFFFFF" />
+</selector>

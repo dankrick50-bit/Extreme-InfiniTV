@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- TV-first PlayerView controller: reachable D-pad focus ring, volume + channel rows. -->
+<!-- Player controls for narrow screens (phones): three stacked rows, all reachable with a D-pad.
+     Wider screens use the one-row version in layout-w600dp. -->
 <merge xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto">
 
@@ -7,20 +8,48 @@
         android:id="@id/exo_controls_background"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
-        android:background="@color/xt_overlay_scrim" />
+        android:background="@drawable/bg_video_scrim" />
 
-    <TextView
-        android:id="@+id/tv_controller_title"
-        android:layout_width="wrap_content"
+    <LinearLayout
+        android:layout_width="match_parent"
         android:layout_height="wrap_content"
-        android:layout_gravity="top|start"
-        android:layout_margin="24dp"
-        android:maxWidth="480dp"
-        android:singleLine="true"
-        android:ellipsize="end"
-        android:textColor="@color/xt_row_text"
-        android:textSize="18sp"
-        android:textStyle="bold" />
+        android:layout_gravity="top"
+        android:orientation="horizontal"
+        android:gravity="center_vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:id="@+id/tv_live_badge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="12dp"
+            android:background="@drawable/bg_video_live_badge"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:paddingTop="2dp"
+            android:paddingBottom="2dp"
+            android:text="@string/xt_video_live"
+            android:textColor="#FFFFFFFF"
+            android:textSize="11sp"
+            android:textStyle="bold"
+            android:letterSpacing="0.08"
+            android:visibility="gone" />
+
+        <TextView
+            android:id="@+id/tv_controller_title"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:singleLine="true"
+            android:ellipsize="end"
+            android:textColor="@color/xt_row_text"
+            android:textSize="18sp"
+            android:textStyle="bold"
+            android:shadowColor="#99000000"
+            android:shadowDy="1"
+            android:shadowRadius="6" />
+
+    </LinearLayout>
 
     <LinearLayout
         android:layout_width="match_parent"
@@ -43,7 +72,7 @@
                 android:id="@+id/tv_mute_button"
                 style="@style/ExoStyledControls.Button.Bottom"
                 android:focusable="true"
-                android:background="@drawable/bg_video_control_focus"
+                android:background="@drawable/bg_video_button"
                 android:src="@drawable/ic_video_volume"
                 android:contentDescription="@string/xt_video_mute_description" />
 
@@ -69,19 +98,19 @@
                 android:id="@id/exo_subtitle"
                 style="@style/ExoStyledControls.Button.Bottom.CC"
                 android:focusable="true"
-                android:background="@drawable/bg_video_control_focus" />
+                android:background="@drawable/bg_video_button" />
 
             <ImageButton
                 android:id="@id/exo_audio_track"
                 style="@style/ExoStyledControls.Button.Bottom.AudioTrack"
                 android:focusable="true"
-                android:background="@drawable/bg_video_control_focus" />
+                android:background="@drawable/bg_video_button" />
 
             <ImageButton
                 android:id="@id/exo_settings"
                 style="@style/ExoStyledControls.Button.Bottom.Settings"
                 android:focusable="true"
-                android:background="@drawable/bg_video_control_focus" />
+                android:background="@drawable/bg_video_button" />
 
         </LinearLayout>
 
@@ -103,13 +132,15 @@
                 android:layout_width="0dp"
                 android:layout_height="wrap_content"
                 android:layout_weight="1"
-                android:background="@drawable/bg_video_control_focus"
-                app:bar_height="2dp"
-                app:touch_target_height="48dp"
-                app:scrubber_enabled_size="10dp"
-                app:scrubber_dragged_size="14dp"
+                android:background="@drawable/bg_video_bar_focus"
+                app:bar_height="4dp"
+                app:touch_target_height="40dp"
+                app:scrubber_enabled_size="14dp"
+                app:scrubber_dragged_size="20dp"
                 app:played_color="@color/xt_accent"
-                app:scrubber_color="@color/xt_accent" />
+                app:scrubber_color="#FFFFFFFF"
+                app:buffered_color="#73FFFFFF"
+                app:unplayed_color="#33FFFFFF" />
 
             <TextView
                 android:id="@id/exo_duration"
@@ -130,7 +161,7 @@
                 style="@style/ExoStyledControls.Button.Bottom"
                 android:focusable="true"
                 android:layout_marginEnd="16dp"
-                android:background="@drawable/bg_video_control_focus"
+                android:background="@drawable/bg_video_button"
                 android:src="@drawable/ic_video_channel_down"
                 android:contentDescription="@string/xt_video_previous_channel_description"
                 android:visibility="gone" />
@@ -138,24 +169,27 @@
             <ImageButton
                 android:id="@id/exo_rew"
                 style="@style/ExoStyledControls.Button.Center"
-                android:background="@drawable/bg_video_control_focus"
+                android:background="@drawable/bg_video_button"
                 android:scaleType="fitCenter"
                 android:padding="@dimen/exo_icon_padding"
-                android:src="@drawable/exo_styled_controls_rewind"
+                android:src="@drawable/ic_video_replay_10"
                 android:contentDescription="@string/exo_controls_rewind_description" />
 
             <ImageButton
                 android:id="@id/exo_play_pause"
                 style="@style/ExoStyledControls.Button.Center.PlayPause"
-                android:background="@drawable/bg_video_control_focus" />
+                android:padding="14dp"
+                android:scaleType="fitCenter"
+                android:background="@drawable/bg_video_play"
+                android:tint="@color/video_play_icon" />
 
             <ImageButton
                 android:id="@id/exo_ffwd"
                 style="@style/ExoStyledControls.Button.Center"
-                android:background="@drawable/bg_video_control_focus"
+                android:background="@drawable/bg_video_button"
                 android:scaleType="fitCenter"
                 android:padding="@dimen/exo_icon_padding"
-                android:src="@drawable/exo_styled_controls_fastforward"
+                android:src="@drawable/ic_video_forward_10"
                 android:contentDescription="@string/exo_controls_fastforward_description" />
 
             <ImageButton
@@ -163,7 +197,7 @@
                 style="@style/ExoStyledControls.Button.Bottom"
                 android:focusable="true"
                 android:layout_marginStart="16dp"
-                android:background="@drawable/bg_video_control_focus"
+                android:background="@drawable/bg_video_button"
                 android:src="@drawable/ic_video_channel_up"
                 android:contentDescription="@string/xt_video_next_channel_description"
                 android:visibility="gone" />

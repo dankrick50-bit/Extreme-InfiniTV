@@ -24,16 +24,20 @@
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
         android:orientation="vertical"
-        android:background="@color/xt_overlay_scrim"
-        android:padding="16dp"
+        android:background="@drawable/bg_video_channel_panel"
+        android:paddingStart="20dp"
+        android:paddingEnd="20dp"
+        android:paddingTop="18dp"
+        android:paddingBottom="12dp"
         android:visibility="gone">
 
         <TextView
             android:id="@+id/channel_list_title"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:textColor="@color/xt_row_text"
+            android:textColor="@color/xt_row_text_dim"
             android:textSize="13sp"
+            android:textStyle="bold"
             android:letterSpacing="0.14"
             android:textAllCaps="true"
             android:paddingBottom="12dp"

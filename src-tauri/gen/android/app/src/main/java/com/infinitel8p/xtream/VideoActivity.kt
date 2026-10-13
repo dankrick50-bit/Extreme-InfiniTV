@@ -1,6 +1,8 @@
 package com.infinitel8p.xtream
 
+import android.app.ActivityManager
 import android.app.PictureInPictureParams
+import android.content.Context
 import android.content.Intent
 import android.content.SharedPreferences
 import android.os.Build
@@ -15,6 +17,7 @@ import android.view.View
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.ImageButton
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -31,7 +34,9 @@ import androidx.media3.common.Tracks
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.datasource.HttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.LoadControl
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.exoplayer.source.MediaSource
 import androidx.media3.session.MediaSession
@@ -80,6 +85,12 @@ class VideoActivity : AppCompatActivity() {
     private const val LIVE_RECONNECT_MAX = 3
     private const val LIVE_RECONNECT_REFILL_MS = 30_000L
     private const val LIVE_RECONNECT_DELAY_MS = 1_000L
+    // The rewind and forward buttons step ten seconds each way, like the rest of the app.
+    private const val SEEK_STEP_MS = 10_000L
+    // Devices sold with 3 GB or less report a little under that.
+    private const val TIGHT_MEMORY_TOTAL_BYTES = 3_400_000_000L
+    private const val MAX_BUFFER_MB_WHEN_TIGHT = 64
+    private const val MIN_BUFFER_MB_WHEN_TIGHT = 24
     // DefaultTimeBar defaults to a 20-step key increment, so a 100-minute movie steps 5
     // minutes per D-pad press; pin a fixed 15s step instead.
     private const val TIME_BAR_KEY_INCREMENT_MS = 15_000L
@@ -106,6 +117,7 @@ class VideoActivity : AppCompatActivity() {
   private var channelListView: RecyclerView? = null
 
   private var controllerTitleView: TextView? = null
+  private var liveBadge: View? = null
   private var timeBarRow: View? = null
   private var channelDownButton: View? = null
   private var channelUpButton: View? = null
@@ -190,6 +202,7 @@ class VideoActivity : AppCompatActivity() {
     channelListView = findViewById(R.id.channel_list)
 
     controllerTitleView = playerView?.findViewById(R.id.tv_controller_title)
+    liveBadge = playerView?.findViewById(R.id.tv_live_badge)
     timeBarRow = playerView?.findViewById(R.id.tv_time_row)
     channelDownButton = playerView?.findViewById(R.id.tv_channel_down)
     channelUpButton = playerView?.findViewById(R.id.tv_channel_up)
@@ -225,6 +238,11 @@ class VideoActivity : AppCompatActivity() {
   }
 
   private fun setupCustomControls() {
+    // media3 puts its own drawables on these two while it builds the controls.
+    playerView?.findViewById<ImageView>(androidx.media3.ui.R.id.exo_rew)
+      ?.setImageResource(R.drawable.ic_video_replay_10)
+    playerView?.findViewById<ImageView>(androidx.media3.ui.R.id.exo_ffwd)
+      ?.setImageResource(R.drawable.ic_video_forward_10)
     channelDownButton?.setOnClickListener { switchChannelByDelta(-1) }
     channelUpButton?.setOnClickListener { switchChannelByDelta(+1) }
     muteButton?.setOnClickListener { applyVolume(ReceiverVolumeState.volume, !ReceiverVolumeState.muted) }
@@ -382,8 +400,12 @@ class VideoActivity : AppCompatActivity() {
   private fun updateControllerForMode() {
     val isLive = mode == MODE_LIVE
     timeBarRow?.visibility = if (isLive) View.GONE else View.VISIBLE
+    liveBadge?.visibility = if (isLive) View.VISIBLE else View.GONE
     channelDownButton?.visibility = if (isLive) View.VISIBLE else View.GONE
     channelUpButton?.visibility = if (isLive) View.VISIBLE else View.GONE
+    // Nothing to rewind on a live picture: channel down / up take those two places.
+    playerView?.setShowRewindButton(!isLive)
+    playerView?.setShowFastForwardButton(!isLive)
     wireControllerFocusChain(isLive)
   }
 
@@ -404,6 +426,36 @@ class VideoActivity : AppCompatActivity() {
     val volume = volumeSeekBar
     val channelDown = channelDownButton
     val channelUp = channelUpButton
+
+    // Wide screens (TVs, tablets) lay everything out in one row under the time bar.
+    if (resources.getBoolean(R.bool.xt_player_single_row)) {
+      val row = listOfNotNull(
+        mute,
+        volume,
+        channelDown?.takeIf { isLive },
+        rewind,
+        playPause,
+        forward,
+        channelUp?.takeIf { isLive },
+        subtitle,
+        audioTrack,
+        settings,
+      ).filter { it.visibility == View.VISIBLE && it.isEnabled }
+      for (index in row.indices) {
+        val current = row[index]
+        current.nextFocusLeftId = row.getOrElse(index - 1) { current }.id
+        current.nextFocusRightId = row.getOrElse(index + 1) { current }.id
+        // Up reaches the time bar where there is one; down has nowhere to go.
+        current.nextFocusUpId = progress?.id ?: current.id
+        current.nextFocusDownId = current.id
+      }
+      progress?.let { timeBar ->
+        timeBar.nextFocusUpId = timeBar.id
+        timeBar.nextFocusDownId = playPause?.id ?: timeBar.id
+        timeBar.setOnKeyListener(null)
+      }
+      return
+    }
 
     // Bottom row (transport), left to right; hidden or disabled members are skipped (e.g. rew/ffwd
     // disabled on live) so the chain still connects across them.
@@ -527,6 +579,9 @@ class VideoActivity : AppCompatActivity() {
     val view = playerView ?: return
     val player = ExoPlayer.Builder(this)
       .setMediaSourceFactory(buildMediaSourceFactory(defaultUa, defaultReferer))
+      .setLoadControl(buildLoadControl())
+      .setSeekBackIncrementMs(SEEK_STEP_MS)
+      .setSeekForwardIncrementMs(SEEK_STEP_MS)
       .build()
     exoPlayer = player
     view.player = player
@@ -622,6 +677,31 @@ class VideoActivity : AppCompatActivity() {
     updateKeepScreenOn(player)
     updatePictureInPictureParams(autoEnter = true)
     applyVolume(ReceiverVolumeState.volume, ReceiverVolumeState.muted)
+  }
+
+  // The player's buffer sits on the app's own heap. Left alone it may grow to about 130 MB on a
+  // high-bitrate film, which a TV stick or a 3 GB tablet cannot spare and which can run the app
+  // out of memory. On those devices it gets a third of what the system lets this app use, 64 MB
+  // at most: still some 25 seconds of a 20 Mbit/s picture, and no change at ordinary bitrates.
+  private fun buildLoadControl(): LoadControl {
+    return try {
+      val manager = getSystemService(Context.ACTIVITY_SERVICE) as ActivityManager
+      val memory = ActivityManager.MemoryInfo().also { manager.getMemoryInfo(it) }
+      val television = packageManager.hasSystemFeature("android.software.leanback") ||
+        (resources.configuration.uiMode and android.content.res.Configuration.UI_MODE_TYPE_MASK) ==
+        android.content.res.Configuration.UI_MODE_TYPE_TELEVISION
+      val tight = manager.isLowRamDevice || memory.totalMem <= TIGHT_MEMORY_TOTAL_BYTES || television
+      if (!tight) return DefaultLoadControl()
+      val budgetMb = (manager.memoryClass / 3).coerceIn(MIN_BUFFER_MB_WHEN_TIGHT, MAX_BUFFER_MB_WHEN_TIGHT)
+      Log.i(TAG, "tight on memory: player buffer capped at $budgetMb MB")
+      DefaultLoadControl.Builder()
+        .setTargetBufferBytes(budgetMb * 1024 * 1024)
+        .setPrioritizeTimeOverSizeThresholds(false)
+        .build()
+    } catch (error: Throwable) {
+      Log.w(TAG, "could not size the player buffer, using the default: $error")
+      DefaultLoadControl()
+    }
   }
 
   private fun updateKeepScreenOn(player: Player) {
@@ -852,6 +932,7 @@ class VideoActivity : AppCompatActivity() {
     val player = exoPlayer ?: return false
     val ua = channel.ua.ifBlank { defaultUa }
     val ref = channel.referer.ifBlank { defaultReferer }
+    controllerTitleView?.text = channel.name
     try {
       val factory = buildMediaSourceFactory(ua, ref)
       val item = buildMediaItem(channel.streamUrl, channel.name, channel.logo)

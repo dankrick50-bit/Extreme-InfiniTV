@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Shade behind the player controls: dark along the top and the bottom, clear over the picture. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:gravity="top" android:height="180dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#B8000000"
+                android:centerColor="#52000000"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+    <item android:gravity="bottom" android:height="320dp">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="90"
+                android:startColor="#E0000000"
+                android:centerColor="#85000000"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+</layer-list>

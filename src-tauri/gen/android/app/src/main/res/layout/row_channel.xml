@@ -4,10 +4,13 @@
     xmlns:android="http://schemas.android.com/apk/res/android"
     android:id="@+id/channel_row_root"
     android:layout_width="match_parent"
-    android:layout_height="56dp"
+    android:layout_height="60dp"
     android:orientation="horizontal"
     android:gravity="center_vertical"
-    android:padding="8dp"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:paddingTop="8dp"
+    android:paddingBottom="8dp"
     android:focusable="true"
     android:clickable="true"
     android:background="?android:attr/selectableItemBackground">
@@ -31,7 +34,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:textColor="@color/xt_row_text"
-            android:textSize="14sp"
+            android:textSize="16sp"
             android:singleLine="true"
             android:ellipsize="end" />
 

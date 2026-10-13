@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The channel list that slides over the picture: a dark sheet with rounded top corners. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android" android:shape="rectangle">
+    <corners
+        android:topLeftRadius="22dp"
+        android:topRightRadius="22dp" />
+    <solid android:color="#EB121216" />
+    <stroke android:width="1dp" android:color="#1FFFFFFF" />
+</shape>
